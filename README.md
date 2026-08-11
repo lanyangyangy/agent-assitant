@@ -38,3 +38,15 @@ trace 日志写入 `APP_DATA_DIR/traces`。
 uv run pytest tests/api -v
 uv run pytest tests/unit tests/api -v
 ```
+
+### Integration 测试
+
+真实外部冒烟测试位于 `tests/integration`，会通过 `.env` 读取本地密钥：
+
+```bash
+uv run pytest tests/integration/test_external_smoke.py::test_real_open_meteo_weather_smoke -v -m integration
+uv run pytest tests/integration -v -m integration
+```
+
+`Open-Meteo` 测试无需密钥；`Tavily` 和 `Qwen` 测试在缺少 `TAVILY_API_KEY` 或
+`DASHSCOPE_API_KEY` 时会自动跳过。本地 API SSE 冒烟测试不使用外部密钥。
