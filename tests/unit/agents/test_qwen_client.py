@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 
 import httpx
@@ -9,10 +10,16 @@ from src.agents.qwen_client import QwenClient, QwenClientError
 from src.context.compress import QwenCompressor
 
 
-def test_create_completion_posts_openai_payload_and_keeps_tool_calls():
+def test_qwen_client_public_methods_are_async_contracts():
+    assert inspect.iscoroutinefunction(QwenClient.create_completion)
+    assert inspect.isasyncgenfunction(QwenClient.stream_completion)
+
+
+@pytest.mark.asyncio
+async def test_create_completion_posts_openai_payload_and_keeps_tool_calls():
     captured: dict[str, object] = {}
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    async def handler(request: httpx.Request) -> httpx.Response:
         captured["url"] = str(request.url)
         captured["auth"] = request.headers["Authorization"]
         captured["payload"] = json.loads(request.content.decode("utf-8"))
@@ -40,19 +47,20 @@ def test_create_completion_posts_openai_payload_and_keeps_tool_calls():
             },
         )
 
-    client = QwenClient(
-        api_key="test-key",
-        base_url="https://dashscope.example/compatible-mode/v1/",
-        model="qwen-plus",
-        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
-    )
-    tools = [{"type": "function", "function": {"name": "calculator"}}]
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        client = QwenClient(
+            api_key="test-key",
+            base_url="https://dashscope.example/compatible-mode/v1/",
+            model="qwen-plus",
+            http_client=http_client,
+        )
+        tools = [{"type": "function", "function": {"name": "calculator"}}]
 
-    message = client.create_completion(
-        messages=[{"role": "user", "content": "算一下"}],
-        tools=tools,
-        tool_choice="auto",
-    )
+        message = await client.create_completion(
+            messages=[{"role": "user", "content": "算一下"}],
+            tools=tools,
+            tool_choice="auto",
+        )
 
     assert captured["url"] == "https://dashscope.example/compatible-mode/v1/chat/completions"
     assert captured["auth"] == "Bearer test-key"
@@ -66,7 +74,8 @@ def test_create_completion_posts_openai_payload_and_keeps_tool_calls():
     assert message["tool_calls"][0]["function"]["name"] == "calculator"
 
 
-def test_stream_completion_yields_content_tokens_and_skips_non_data_lines():
+@pytest.mark.asyncio
+async def test_stream_completion_yields_content_tokens_and_skips_non_data_lines():
     sse_body = "\n".join(
         [
             "",
@@ -79,46 +88,54 @@ def test_stream_completion_yields_content_tokens_and_skips_non_data_lines():
         ]
     )
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    async def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content.decode("utf-8"))
         assert payload["stream"] is True
         return httpx.Response(200, text=sse_body)
 
-    client = QwenClient(
-        api_key="test-key",
-        base_url="https://dashscope.example/v1",
-        model="qwen-plus",
-        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
-    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        client = QwenClient(
+            api_key="test-key",
+            base_url="https://dashscope.example/v1",
+            model="qwen-plus",
+            http_client=http_client,
+        )
+        tokens = [
+            token
+            async for token in client.stream_completion([{"role": "user", "content": "hello"}])
+        ]
 
-    assert list(client.stream_completion([{"role": "user", "content": "hello"}])) == ["你", "好"]
+    assert tokens == ["你", "好"]
 
 
-def test_http_error_is_wrapped_in_stable_chinese_exception():
-    def handler(request: httpx.Request) -> httpx.Response:
+@pytest.mark.asyncio
+async def test_http_error_is_wrapped_in_stable_chinese_exception():
+    async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(503, text="upstream unavailable")
 
-    client = QwenClient(
-        api_key="test-key",
-        base_url="https://dashscope.example/v1",
-        model="qwen-plus",
-        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
-    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        client = QwenClient(
+            api_key="test-key",
+            base_url="https://dashscope.example/v1",
+            model="qwen-plus",
+            http_client=http_client,
+        )
 
-    with pytest.raises(QwenClientError) as exc_info:
-        client.create_completion([{"role": "user", "content": "hello"}])
+        with pytest.raises(QwenClientError) as exc_info:
+            await client.create_completion([{"role": "user", "content": "hello"}])
 
     message = str(exc_info.value)
     assert "Qwen 请求失败" in message
     assert "503" in message
 
 
-def test_qwen_compressor_uses_create_completion_with_chinese_system_prompt():
+@pytest.mark.asyncio
+async def test_qwen_compressor_uses_create_completion_with_chinese_system_prompt():
     class FakeQwenClient:
         def __init__(self):
             self.messages: list[dict[str, str]] | None = None
 
-        def create_completion(self, messages, tools=None, tool_choice=None):
+        async def create_completion(self, messages, tools=None, tool_choice=None):
             self.messages = messages
             assert tools is None
             assert tool_choice is None
@@ -127,7 +144,7 @@ def test_qwen_compressor_uses_create_completion_with_chinese_system_prompt():
     fake_client = FakeQwenClient()
     compressor = QwenCompressor(fake_client)
 
-    assert compressor.compress("很长的上下文", task="回答用户问题") == "摘要：保留关键事实"
+    assert await compressor.compress("很长的上下文", task="回答用户问题") == "摘要：保留关键事实"
     assert fake_client.messages is not None
     assert fake_client.messages[0]["role"] == "system"
     assert "中文" in fake_client.messages[0]["content"]

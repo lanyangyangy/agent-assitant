@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import inspect
 
 import pytest
 
 from src.context.builder import BuiltContext, ContextBuilder, ContextConfig, ContextPacket
-from src.context.token_counter import estimate_tokens
-from src.context.history import format_history
-from src.context.compress import SimpleCompressor
 from src.context.builder import jaccard_similarity
+from src.context.compress import SimpleCompressor
+from src.context.history import format_history
+from src.context.token_counter import estimate_tokens
 from src.core.session_store import MessageRecord
 
 
@@ -17,7 +18,7 @@ class RecordingCompressor:
     replacement: str = "压缩后的上下文"
     called_with: str | None = None
 
-    def compress(self, text: str, task: str | None = None) -> str:
+    async def compress(self, text: str, task: str | None = None) -> str:
         self.called_with = text
         return self.replacement
 
@@ -31,6 +32,11 @@ def _message(message_id: int, role: str, content: str) -> MessageRecord:
         content=content,
         created_at=f"2026-08-11T00:00:{message_id:02d}+00:00",
     )
+
+
+def test_context_builder_and_compressor_are_async_contracts():
+    assert inspect.iscoroutinefunction(ContextBuilder.build)
+    assert inspect.iscoroutinefunction(SimpleCompressor.compress)
 
 
 def test_estimate_tokens_counts_english_and_chinese_lightly():
@@ -56,7 +62,8 @@ def test_format_history_uses_message_records_in_order():
     assert format_history(history) == "user: 你好\nassistant: 我在"
 
 
-def test_context_builder_sorts_by_relevance_recency_and_store_score():
+@pytest.mark.asyncio
+async def test_context_builder_sorts_by_relevance_recency_and_store_score():
     builder = ContextBuilder(
         ContextConfig(
             max_tokens=800,
@@ -71,7 +78,7 @@ def test_context_builder_sorts_by_relevance_recency_and_store_score():
         ContextPacket("calculator tool can add numbers", "2026-08-11T00:00:00+00:00", 0.2, {"id": "mid"}),
     ]
 
-    result = builder.build(
+    result = await builder.build(
         task="Use calculator to add numbers",
         system_policy="遵守安全策略",
         history=[],
@@ -83,12 +90,13 @@ def test_context_builder_sorts_by_relevance_recency_and_store_score():
     assert [packet.metadata["id"] for packet in result.selected_packets[:2]] == ["mid", "old"]
 
 
-def test_context_builder_outputs_required_sections_and_history():
+@pytest.mark.asyncio
+async def test_context_builder_outputs_required_sections_and_history():
     builder = ContextBuilder(ContextConfig(max_tokens=800, enable_compression=False))
     history = [_message(1, "user", "之前问过天气"), _message(2, "assistant", "回答过天气")]
     packets = [ContextPacket("天气工具需要城市名", "2026-08-11T00:00:00+00:00", 0.7, {"kind": "fact"})]
 
-    result = builder.build(
+    result = await builder.build(
         task="查询北京天气",
         system_policy="你是中文助手",
         history=history,
@@ -104,7 +112,8 @@ def test_context_builder_outputs_required_sections_and_history():
     assert "优先简洁回答" in result.text
 
 
-def test_context_builder_compresses_only_context_section_when_over_budget():
+@pytest.mark.asyncio
+async def test_context_builder_compresses_only_context_section_when_over_budget():
     compressor = RecordingCompressor()
     builder = ContextBuilder(
         ContextConfig(max_tokens=35, enable_compression=True),
@@ -119,7 +128,7 @@ def test_context_builder_compresses_only_context_section_when_over_budget():
         )
     ]
 
-    result = builder.build(
+    result = await builder.build(
         task="总结上下文",
         system_policy="保持中文",
         history=[_message(1, "user", "历史不应被压缩")],
@@ -135,7 +144,8 @@ def test_context_builder_compresses_only_context_section_when_over_budget():
     assert "历史不应被压缩" in result.text
 
 
-def test_simple_compressor_keeps_a_short_chinese_summary():
+@pytest.mark.asyncio
+async def test_simple_compressor_keeps_a_short_chinese_summary():
     compressor = SimpleCompressor(max_chars=12)
 
-    assert compressor.compress("这是一个很长的上下文片段") == "这是一个很长的上下..."
+    assert await compressor.compress("这是一个很长的上下文片段") == "这是一个很长的上下..."

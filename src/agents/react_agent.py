@@ -47,7 +47,7 @@ class ReactAgent:
         history = await self.session_store.get_recent_messages(user_id, session_id, limit=10)
         memory_records = await self.memory_store.search(user_id, session_id, message, limit=5)
         memory_packets = [self._memory_to_packet(record) for record in memory_records]
-        built_context = self.context_builder.build(
+        built_context = await self.context_builder.build(
             task=message,
             system_policy="你是一个中文智能助手，必要时可以调用工具并基于工具结果回答。",
             history=history,
@@ -70,7 +70,7 @@ class ReactAgent:
             },
         )
 
-        assistant_probe = self.qwen_client.create_completion(
+        assistant_probe = await self.qwen_client.create_completion(
             messages,
             tools=self.registry.to_qwen_tools(),
         )
@@ -83,7 +83,7 @@ class ReactAgent:
                 yield event
 
         answer_parts: list[str] = []
-        for token in self.qwen_client.stream_completion(messages):
+        async for token in self.qwen_client.stream_completion(messages):
             answer_parts.append(token)
             yield self._event(session_id, "token", {"content": token})
 

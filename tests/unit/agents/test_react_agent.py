@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import inspect
 import json
 from types import SimpleNamespace
 from typing import Any
@@ -77,7 +78,7 @@ class FakeContextBuilder:
     def __init__(self):
         self.calls: list[dict[str, Any]] = []
 
-    def build(self, task, system_policy, history, memory_packets, custom_packets=None):
+    async def build(self, task, system_policy, history, memory_packets, custom_packets=None):
         self.calls.append(
             {
                 "task": task,
@@ -113,15 +114,16 @@ class FakeQwenClient:
         self.create_calls: list[dict[str, Any]] = []
         self.stream_calls: list[list[dict[str, Any]]] = []
 
-    def create_completion(self, messages, tools=None, tool_choice=None):
+    async def create_completion(self, messages, tools=None, tool_choice=None):
         self.create_calls.append(
             {"messages": list(messages), "tools": tools, "tool_choice": tool_choice}
         )
         return self.create_message
 
-    def stream_completion(self, messages, tools=None, tool_choice=None):
+    async def stream_completion(self, messages, tools=None, tool_choice=None):
         self.stream_calls.append(list(messages))
-        yield from self.tokens
+        for token in self.tokens:
+            yield token
 
 
 def _make_agent(qwen_message: dict[str, Any], tokens: list[str], session_exists: bool = True):
@@ -133,6 +135,11 @@ def _make_agent(qwen_message: dict[str, Any], tokens: list[str], session_exists:
     trace_logger = FakeTraceLogger([])
     agent = ReactAgent(qwen, registry, builder, session_store, memory_store, trace_logger)
     return agent, qwen, registry, builder, session_store, memory_store, trace_logger
+
+
+def test_fake_qwen_client_uses_async_contract_like_real_client():
+    assert inspect.iscoroutinefunction(FakeQwenClient.create_completion)
+    assert inspect.isasyncgenfunction(FakeQwenClient.stream_completion)
 
 
 @pytest.mark.asyncio

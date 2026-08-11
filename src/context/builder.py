@@ -16,7 +16,7 @@ _TEXT_TOKEN_RE = re.compile(r"[A-Za-z0-9_]+|[\u4e00-\u9fff]", re.UNICODE)
 
 
 class Compressor(Protocol):
-    def compress(self, text: str, task: str | None = None) -> str:
+    async def compress(self, text: str, task: str | None = None) -> str:
         ...
 
 
@@ -63,7 +63,7 @@ class ContextBuilder:
         self.config = config or ContextConfig()
         self.compressor = compressor or SimpleCompressor(max_chars=1200)
 
-    def build(
+    async def build(
         self,
         task: str,
         system_policy: str,
@@ -78,7 +78,7 @@ class ContextBuilder:
 
         compressed = False
         if self._needs_compression(text) and self.config.enable_compression and context_block.strip():
-            context_block = self.compressor.compress(context_block, task=task)
+            context_block = await self.compressor.compress(context_block, task=task)
             text = self._structure(system_policy, task, state_block, context_block)
             compressed = True
 

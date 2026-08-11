@@ -67,3 +67,11 @@
 - 修改文件：`docs/issue-resolution-log.md`、`src/tools/calculator.py`、`src/tools/circuit_breaker.py`、`src/tools/registry.py`、`src/tools/weather.py`、`tests/unit/tools/test_calculator.py`、`tests/unit/tools/test_registry_and_circuit_breaker.py`、`tests/unit/tools/test_search_weather.py`
 - 验证命令：`uv run pytest tests/unit/tools -v`、`uv run pytest tests/unit -v`
 - 结果：新增半开输入错误释放、float 幂溢出输入分类和 Weather 网络错误包装回归测试；修复后 `uv run pytest tests/unit/tools -v` 与 `uv run pytest tests/unit -v` 均通过。
+
+## 2026-08-12 - Qwen 与 Agent 调用链 async 合约偏差
+- 日期：2026-08-12
+- 现象：规格复核指出 `QwenClient` 使用同步 `httpx.Client`，`create_completion()` 与 `stream_completion()` 是同步方法；`ReactAgent.stream_chat()` 在 async generator 内同步调用 Qwen；`QwenCompressor.compress()` 也同步调用远程补全，后续压缩可能阻塞事件循环。
+- 根因：Task 8/9 初版测试使用同步 `httpx.Client` 与同步 FakeQwenClient，未用 `await` 和 `async for` 验证 OpenAI-compatible Qwen 调用链的 async 合约，导致实现偏离后端 async 架构。
+- 修改文件：`tests/unit/agents/test_qwen_client.py`、`tests/unit/context/test_context_builder.py`、`tests/unit/agents/test_react_agent.py`、`src/agents/qwen_client.py`、`src/context/compress.py`、`src/context/builder.py`、`src/agents/react_agent.py`
+- 验证命令：`uv run pytest tests/unit/context tests/unit/agents tests/unit/core/test_streaming_trace.py -v`、`uv run pytest tests/unit -v`
+- 结果：已补齐 async MockTransport/AsyncClient、`await` 与 `async for` 回归测试；修复后定向 async 合约测试通过，最终验证命令通过。

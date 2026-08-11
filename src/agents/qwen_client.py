@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import AsyncIterator, Sequence
 import json
 from typing import Any
 
@@ -17,7 +17,7 @@ class QwenClient:
         api_key: str,
         base_url: str,
         model: str,
-        http_client: httpx.Client | None = None,
+        http_client: httpx.AsyncClient | None = None,
     ):
         if not api_key:
             raise ValueError("Qwen API Key 不能为空。")
@@ -29,9 +29,9 @@ class QwenClient:
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
-        self.http_client = http_client or httpx.Client(timeout=60)
+        self.http_client = http_client or httpx.AsyncClient(timeout=60)
 
-    def create_completion(
+    async def create_completion(
         self,
         messages: Sequence[dict[str, Any]],
         tools: Sequence[dict[str, Any]] | None = None,
@@ -40,7 +40,7 @@ class QwenClient:
         payload = self._payload(messages, stream=False, tools=tools, tool_choice=tool_choice)
 
         try:
-            response = self.http_client.post(
+            response = await self.http_client.post(
                 self._completion_url(),
                 headers=self._headers(),
                 json=payload,
@@ -56,23 +56,23 @@ class QwenClient:
 
         return self._message_from_response(data)
 
-    def stream_completion(
+    async def stream_completion(
         self,
         messages: Sequence[dict[str, Any]],
         tools: Sequence[dict[str, Any]] | None = None,
         tool_choice: str | dict[str, Any] | None = None,
-    ) -> Iterator[str]:
+    ) -> AsyncIterator[str]:
         payload = self._payload(messages, stream=True, tools=tools, tool_choice=tool_choice)
 
         try:
-            with self.http_client.stream(
+            async with self.http_client.stream(
                 "POST",
                 self._completion_url(),
                 headers=self._headers(),
                 json=payload,
             ) as response:
                 response.raise_for_status()
-                for line in response.iter_lines():
+                async for line in response.aiter_lines():
                     token = self._token_from_sse_line(line)
                     if token is _Done:
                         break
