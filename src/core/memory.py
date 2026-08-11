@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 import json
 from pathlib import Path
@@ -48,13 +48,43 @@ class SQLiteMemoryStore:
                 CREATE INDEX IF NOT EXISTS idx_memories_user_session_id
                     ON memories (user_id, session_id, id);
 
-                CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
+                DROP TRIGGER IF EXISTS memories_ai;
+                DROP TRIGGER IF EXISTS memories_ad;
+                DROP TRIGGER IF EXISTS memories_au;
+                DROP TABLE IF EXISTS memory_fts;
+
+                CREATE VIRTUAL TABLE memory_fts USING fts5(
                     content,
                     content='memories',
-                    content_rowid='id'
+                    content_rowid='id',
+                    tokenize='trigram'
                 );
+
+                CREATE TRIGGER IF NOT EXISTS memories_ai
+                AFTER INSERT ON memories
+                BEGIN
+                    INSERT INTO memory_fts(rowid, content)
+                    VALUES (new.id, new.content);
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS memories_ad
+                AFTER DELETE ON memories
+                BEGIN
+                    INSERT INTO memory_fts(memory_fts, rowid, content)
+                    VALUES ('delete', old.id, old.content);
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS memories_au
+                AFTER UPDATE ON memories
+                BEGIN
+                    INSERT INTO memory_fts(memory_fts, rowid, content)
+                    VALUES ('delete', old.id, old.content);
+                    INSERT INTO memory_fts(rowid, content)
+                    VALUES (new.id, new.content);
+                END;
                 """
             )
+            await db.execute("INSERT INTO memory_fts(memory_fts) VALUES ('rebuild')")
             await db.commit()
 
     async def add(
@@ -84,13 +114,6 @@ class SQLiteMemoryStore:
                 await db.rollback()
                 raise RuntimeError("写入记忆失败：SQLite 未返回记录 ID。")
 
-            await db.execute(
-                """
-                INSERT INTO memory_fts (rowid, content)
-                VALUES (?, ?)
-                """,
-                (memory_id, content),
-            )
             await db.commit()
 
         return MemoryRecord(
@@ -139,7 +162,8 @@ class SQLiteMemoryStore:
                 (fts_query, user_id, session_id, limit),
             )
 
-        return [self._memory_from_row(row) for row in rows]
+        records = [self._memory_from_row(row) for row in rows]
+        return self._normalize_scores(records)
 
     @asynccontextmanager
     async def _connect(self) -> AsyncIterator[aiosqlite.Connection]:
@@ -172,6 +196,24 @@ class SQLiteMemoryStore:
             created_at=row["created_at"],
             score=max(0.0, -rank),
         )
+
+    @staticmethod
+    def _normalize_scores(records: list[MemoryRecord]) -> list[MemoryRecord]:
+        if not records:
+            return []
+
+        if len(records) == 1:
+            return [replace(records[0], score=1.0)]
+
+        max_raw_score = max(record.score for record in records)
+        if max_raw_score <= 0.0:
+            return [replace(record, score=1.0) for record in records]
+
+        # BM25 原始分值通常很小，这里按单次搜索内最大值归一化。
+        return [
+            replace(record, score=min(1.0, max(0.0, record.score / max_raw_score)))
+            for record in records
+        ]
 
     @staticmethod
     def _metadata_from_json(value: str) -> dict[str, Any]:

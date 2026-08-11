@@ -35,3 +35,11 @@
 - 修改文件：`tests/unit/core/test_session_store.py`、`src/core/session_store.py`
 - 验证命令：`uv run pytest tests/unit/core/test_session_store.py -v`、`uv run pytest tests/unit -v`
 - 结果：PASS，session_store 定向测试与 unit 测试全部通过。
+
+## 2026-08-12 - SQLite memory FTS 维护、评分与中文检索复核问题
+- 日期：2026-08-12
+- 现象：代码质量复核指出 `memory_fts` 外部内容表只在 `add()` 中手动写入，直接更新或删除 `memories` 后可能出现 FTS 索引旧词残留；`score=max(0.0, -rank)` 分值过小，不利于后续上下文相关性排序；默认 FTS 对无空格中文内容检索不友好。
+- 根因：`initialize()` 未创建 INSERT/UPDATE/DELETE triggers，也未 rebuild 已有外部内容索引；搜索结果未基于同一次查询内的最大原始分做归一化；FTS 索引文本未包含中文子串可命中的预处理词元。
+- 修改文件：`docs/issue-resolution-log.md`、`tests/unit/core/test_memory.py`、`src/core/memory.py`
+- 验证命令：`uv run pytest tests/unit/core/test_memory.py -v`、`uv run pytest tests/unit -v`
+- 结果：PASS，memory 定向测试 11 项通过，unit 测试 16 项全部通过。
