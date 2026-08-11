@@ -43,3 +43,11 @@
 - 修改文件：`docs/issue-resolution-log.md`、`tests/unit/core/test_memory.py`、`src/core/memory.py`
 - 验证命令：`uv run pytest tests/unit/core/test_memory.py -v`、`uv run pytest tests/unit -v`
 - 结果：PASS，memory 定向测试 11 项通过，unit 测试 16 项全部通过。
+
+## 2026-08-12 - 天气工具注册名与规格不一致
+- 日期：2026-08-12
+- 现象：规格复核指出 `OpenMeteoWeatherTool.name` 当前为 `weather`，但总规格要求天气工具名必须是 `get_weather`，导致 registry/Qwen schema 暴露错误工具名，调用方执行 `invoke("get_weather", ...)` 会得到 `NOT_FOUND`。
+- 根因：Task 6 实现时使用了简短工具名 `weather`，测试只覆盖了 HTTP 行为和默认参数，缺少对公开工具名和 registry 调用契约的断言。
+- 修改文件：`docs/issue-resolution-log.md`、`tests/unit/tools/test_search_weather.py`、`src/tools/weather.py`
+- 验证命令：`uv run pytest tests/unit/tools -v`、`uv run pytest tests/unit -v`
+- 结果：新增工具名与 registry 调用回归测试，修正天气工具名后通过 `uv run pytest tests/unit/tools -v` 与 `uv run pytest tests/unit -v` 验证。

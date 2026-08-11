@@ -13,7 +13,7 @@ CURRENT_FIELDS = "temperature_2m,relative_humidity_2m,weather_code,wind_speed_10
 
 
 class OpenMeteoWeatherTool(BaseTool):
-    name = "weather"
+    name = "get_weather"
     description = "使用 Open-Meteo 查询指定地点的当前天气。"
     parameters = [
         ToolParameter("location", "string", "城市、地区或地点名称。"),

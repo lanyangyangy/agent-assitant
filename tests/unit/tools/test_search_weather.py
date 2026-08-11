@@ -49,6 +49,10 @@ def _weather_module():
     return importlib.import_module("src.tools.weather")
 
 
+def _registry_module():
+    return importlib.import_module("src.tools.registry")
+
+
 @pytest.mark.asyncio
 async def test_tavily_search_posts_expected_request_and_returns_answer_results():
     client = FakeHttpClient(
@@ -229,3 +233,41 @@ async def test_open_meteo_weather_defaults_and_client_ownership(monkeypatch):
     injected_tool = weather.OpenMeteoWeatherTool(http_client=injected_client)
     await injected_tool.aclose()
     assert injected_client.closed is False
+
+
+def test_open_meteo_weather_tool_name_matches_public_spec():
+    tool = _weather_module().OpenMeteoWeatherTool(http_client=FakeHttpClient())
+
+    assert tool.name == "get_weather"
+
+
+@pytest.mark.asyncio
+async def test_open_meteo_weather_can_be_invoked_through_registry_by_spec_name():
+    client = FakeHttpClient(
+        get_payloads=[
+            {"results": [{"name": "Beijing", "latitude": 39.9042, "longitude": 116.4074}]},
+            {
+                "current": {
+                    "temperature_2m": 22.0,
+                    "relative_humidity_2m": 55,
+                    "weather_code": 1,
+                    "wind_speed_10m": 8.0,
+                },
+                "current_units": {
+                    "temperature_2m": "°C",
+                    "relative_humidity_2m": "%",
+                    "wind_speed_10m": "km/h",
+                },
+            },
+        ]
+    )
+    registry = _registry_module().ToolRegistry()
+    registry.register(_weather_module().OpenMeteoWeatherTool(http_client=client))
+
+    schema = registry.to_qwen_tools()
+    result = await registry.invoke("get_weather", {"location": "Beijing"})
+
+    assert schema[0]["function"]["name"] == "get_weather"
+    assert result.success is True
+    assert result.data["location"]["name"] == "Beijing"
+    assert result.data["current"]["temperature"] == 22.0
