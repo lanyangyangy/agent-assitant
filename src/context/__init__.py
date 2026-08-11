@@ -1,6 +1,6 @@
 from src.context.builder import BuiltContext, ContextBuilder, ContextConfig, ContextPacket
 from src.context.builder import jaccard_similarity
-from src.context.compress import SimpleCompressor
+from src.context.compress import QwenCompressor, SimpleCompressor
 from src.context.history import format_history
 from src.context.token_counter import estimate_tokens
 
@@ -9,6 +9,7 @@ __all__ = [
     "ContextBuilder",
     "ContextConfig",
     "ContextPacket",
+    "QwenCompressor",
     "SimpleCompressor",
     "estimate_tokens",
     "format_history",
