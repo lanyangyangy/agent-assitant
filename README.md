@@ -14,6 +14,12 @@ uv sync
 uv run uvicorn src.main:app --host 127.0.0.1 --port 8000
 ```
 
+如果 `8000` 端口已被占用，可以改用其他本地端口，例如：
+
+```bash
+uv run uvicorn src.main:app --host 127.0.0.1 --port 8001
+```
+
 可选环境变量：
 
 - `DASHSCOPE_API_KEY`：配置后使用真实 Qwen；未配置时使用本地回显客户端。
@@ -39,6 +45,13 @@ uv run pytest tests/api -v
 uv run pytest tests/unit tests/api -v
 ```
 
+完整验收命令：
+
+```bash
+uv run pytest -m "not integration" -v
+uv run pytest -m integration -v
+```
+
 ### Integration 测试
 
 真实外部冒烟测试位于 `tests/integration`，会通过 `.env` 读取本地密钥：
@@ -50,3 +63,23 @@ uv run pytest tests/integration -v -m integration
 
 `Open-Meteo` 测试无需密钥；`Tavily` 和 `Qwen` 测试在缺少 `TAVILY_API_KEY` 或
 `DASHSCOPE_API_KEY` 时会自动跳过。本地 API SSE 冒烟测试不使用外部密钥。
+
+## 手工联调
+
+创建会话：
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/sessions -H "X-User-Id: alice"
+```
+
+使用返回的 `session_id` 发起流式聊天：
+
+```bash
+curl -N -X POST http://127.0.0.1:8000/chat/stream \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: alice" \
+  -d "{\"session_id\":\"替换为返回的 session_id\",\"message\":\"请计算 19 * 23 并解释结果\"}"
+```
+
+响应应包含 `message_start`、`tool_call`、`tool_result`、`token` 和 `message_end`
+事件。用其他 `X-User-Id` 调用 `GET /sessions` 时，不应看到 Alice 的会话。
