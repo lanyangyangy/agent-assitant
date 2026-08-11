@@ -421,3 +421,23 @@ async def test_react_agent_keeps_message_end_when_memory_save_fails():
     assert session_store.added[-1] == ("alice", "s1", "assistant", "有效回复")
     assert events[-1].data["memory_saved"] is False
     assert "记忆保存失败" in events[-1].data["warning"]
+
+
+@pytest.mark.asyncio
+async def test_react_agent_keeps_streaming_when_trace_logging_fails():
+    qwen = FakeQwenClient(
+        create_messages=[{"role": "assistant", "content": "无需工具"}],
+        tokens=["仍然", "回复"],
+    )
+    agent, _, _, _, _, _ = _make_agent(qwen)
+    agent.trace_logger = FailingTraceLogger()
+
+    events = [event async for event in agent.stream_chat("alice", "s1", "你好")]
+
+    assert [event.type for event in events] == ["message_start", "token", "token", "message_end"]
+    assert events[-1].data["content"] == "仍然回复"
+
+
+class FailingTraceLogger:
+    def log_event(self, trace_id, event) -> None:
+        raise RuntimeError("trace disk full")

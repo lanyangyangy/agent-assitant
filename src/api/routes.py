@@ -21,9 +21,11 @@ from src.api.schemas import (
     HealthResponse,
     SessionListResponse,
     SessionResponse,
+    ToolInvokeResponse,
     ToolParameterResponse,
     ToolResponseSchema,
 )
+from src.core.agent import AgentEvent
 from src.core.config import Settings
 from src.core.session_store import SQLiteSessionStore
 from src.core.streaming import format_sse
@@ -91,7 +93,7 @@ async def list_tools(registry: ToolRegistry = Depends(get_tool_registry)) -> lis
     return [_tool_to_schema(tool) for tool in registry.list_tools()]
 
 
-@router.post("/tools/{tool_name}/invoke")
+@router.post("/tools/{tool_name}/invoke", response_model=ToolInvokeResponse)
 async def invoke_tool(
     tool_name: str,
     request: Request,
@@ -122,13 +124,25 @@ async def chat_stream(
     agent=Depends(get_agent),
 ) -> StreamingResponse:
     async def _events() -> AsyncIterator[str]:
-        async for event in agent.stream_chat(
-            user_id=user_id,
-            session_id=body.session_id,
-            message=body.message,
-            metadata=body.metadata,
-        ):
-            yield format_sse(event)
+        try:
+            async for event in agent.stream_chat(
+                user_id=user_id,
+                session_id=body.session_id,
+                message=body.message,
+                metadata=body.metadata,
+            ):
+                yield format_sse(event)
+        except Exception as exc:
+            yield format_sse(
+                AgentEvent(
+                    "error",
+                    {
+                        "user_id": user_id,
+                        "session_id": body.session_id,
+                        "message": f"聊天流中断：{exc}",
+                    },
+                )
+            )
 
     return StreamingResponse(
         _events(),

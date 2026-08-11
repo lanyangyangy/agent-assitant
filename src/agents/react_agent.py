@@ -336,5 +336,8 @@ class ReactAgent:
             **data,
         }
         event = AgentEvent(event_type, event_data)
-        self.trace_logger.log_event(trace_id, event)
+        try:
+            self.trace_logger.log_event(trace_id, event)
+        except Exception:
+            pass
         return event

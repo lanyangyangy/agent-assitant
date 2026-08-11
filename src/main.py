@@ -8,6 +8,8 @@ import re
 from typing import Any
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
 from src.agents.qwen_client import QwenClient
 from src.agents.react_agent import ReactAgent
@@ -76,6 +78,7 @@ def create_app(
                 await managed_qwen_client.aclose()
 
     app = FastAPI(title=effective_settings.app_name, lifespan=lifespan)
+    app.add_exception_handler(RequestValidationError, _request_validation_error_handler)
     app.include_router(api_router)
     return app
 
@@ -122,7 +125,31 @@ async def _close_registry_tools(registry: ToolRegistry) -> None:
     for tool in registry.list_tools():
         close = getattr(tool, "aclose", None)
         if close is not None:
-            await close()
+            try:
+                await close()
+            except Exception:
+                continue
+
+
+async def _request_validation_error_handler(
+    request: Any,
+    exc: RequestValidationError,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": "请求参数校验失败。",
+            "errors": [_validation_error_to_dict(error) for error in exc.errors()],
+        },
+    )
+
+
+def _validation_error_to_dict(error: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "loc": list(error.get("loc", [])),
+        "type": str(error.get("type", "validation_error")),
+        "message": "字段校验失败。",
+    }
 
 
 class _UnavailableSearchTool(BaseTool):
@@ -144,8 +171,8 @@ class _LocalEchoClient:
         tools: Sequence[dict[str, Any]] | None = None,
         tool_choice: str | dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        if self._should_call_calculator(messages):
-            expression = self._extract_expression(self._last_user_message(messages))
+        expression = self._calculator_expression(messages)
+        if expression is not None:
             return {
                 "role": "assistant",
                 "content": None,
@@ -184,11 +211,15 @@ class _LocalEchoClient:
         return None
 
     @classmethod
-    def _should_call_calculator(cls, messages: Sequence[dict[str, Any]]) -> bool:
+    def _calculator_expression(cls, messages: Sequence[dict[str, Any]]) -> str | None:
         if any(message.get("role") == "tool" for message in messages):
-            return False
+            return None
         user_message = cls._last_user_message(messages)
-        return "计算" in user_message or bool(_MATH_EXPRESSION_RE.search(user_message))
+        has_calculation_keyword = any(keyword in user_message for keyword in _CALCULATION_KEYWORDS)
+        return cls._extract_expression(
+            user_message,
+            require_operator=not has_calculation_keyword,
+        )
 
     @staticmethod
     def _last_user_message(messages: Sequence[dict[str, Any]]) -> str:
@@ -198,10 +229,62 @@ class _LocalEchoClient:
                 return content if isinstance(content, str) else ""
         return ""
 
+    @classmethod
+    def _extract_expression(cls, message: str, require_operator: bool = False) -> str | None:
+        candidates: list[str] = []
+        for match in _MATH_FRAGMENT_RE.finditer(message):
+            fragment = cls._best_balanced_fragment(match.group(0))
+            if fragment is None:
+                continue
+            if require_operator and not cls._has_operator(fragment):
+                continue
+            candidates.append(fragment)
+
+        if not candidates:
+            return None
+        return max(candidates, key=lambda value: (len(value), cls._operator_count(value)))
+
+    @classmethod
+    def _best_balanced_fragment(cls, raw_fragment: str) -> str | None:
+        fragment = raw_fragment.strip()
+        best = None
+        for start in range(len(fragment)):
+            for end in range(len(fragment), start, -1):
+                candidate = fragment[start:end].strip()
+                if len(best or "") >= len(candidate):
+                    break
+                if cls._is_complete_expression(candidate):
+                    best = candidate
+                    break
+        return best
+
+    @classmethod
+    def _is_complete_expression(cls, value: str) -> bool:
+        if not value or not any(char.isdigit() for char in value):
+            return False
+        if not cls._parentheses_balanced(value):
+            return False
+        return value[0] not in "*/%)" and value[-1] not in "+-*/%("
+
     @staticmethod
-    def _extract_expression(message: str) -> str:
-        match = _MATH_EXPRESSION_RE.search(message)
-        return match.group(0).strip() if match is not None else "0"
+    def _parentheses_balanced(value: str) -> bool:
+        depth = 0
+        for char in value:
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth < 0:
+                    return False
+        return depth == 0
+
+    @staticmethod
+    def _has_operator(value: str) -> bool:
+        return any(operator in value for operator in ("+", "-", "*", "/", "%"))
+
+    @staticmethod
+    def _operator_count(value: str) -> int:
+        return sum(1 for char in value if char in "+-*/%")
 
     @staticmethod
     def _answer_from_tool_result(messages: Sequence[dict[str, Any]]) -> str | None:
@@ -228,7 +311,8 @@ class _LocalEchoClient:
         return [answer[index : index + 8] for index in range(0, len(answer), 8)]
 
 
-_MATH_EXPRESSION_RE = re.compile(r"(?<![\w.])[\d\s().+\-*/%]+(?![\w.])")
+_CALCULATION_KEYWORDS = ("计算", "算")
+_MATH_FRAGMENT_RE = re.compile(r"[\d\s().+\-*/%]+")
 
 
 app = create_app()

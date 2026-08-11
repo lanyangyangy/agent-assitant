@@ -91,3 +91,11 @@
 - 修改文件：`docs/issue-resolution-log.md`、`tests/api/test_health_sessions_tools.py`、`src/api/schemas.py`、`src/api/routes.py`
 - 验证命令：`uv run pytest tests/api -v`、`uv run pytest tests/unit tests/api -v`
 - 结果：PASS，API 定向测试 6 项通过，unit+API 组合测试 92 项通过。
+
+## 2026-08-12 - API 流式错误兜底、本地计算提取与校验错误契约偏差
+- 日期：2026-08-12
+- 现象：代码质量复核指出 `/chat/stream` 在 agent generator 直接抛异常时可能 500 或断流；trace 日志失败可能打断聊天；本地回显客户端无法正确提取中文紧贴的算术表达式；FastAPI/Pydantic 默认 422 响应不是稳定中文契约；工具调用响应缺少 response_model，shutdown 阶段工具关闭异常未隔离，未配置 Tavily 时 search 调用缺 API 覆盖。
+- 根因：Task 10 首版只覆盖正常 SSE、缺 session 与基础工具调用，未覆盖流式迭代边界、日志副作用失败、中文无空格输入、请求体验证失败与关闭阶段异常隔离。
+- 修改文件：`docs/issue-resolution-log.md`、`tests/api/test_chat_stream.py`、`tests/api/test_health_sessions_tools.py`、`src/api/schemas.py`、`src/api/routes.py`、`src/main.py`、`src/agents/react_agent.py`
+- 验证命令：`uv run pytest tests/api -v`、`uv run pytest tests/unit tests/api -v`
+- 结果：PASS，API 定向测试 17 项通过，unit+API 组合测试 104 项通过。

@@ -90,3 +90,53 @@ async def test_tools_are_listed_and_calculator_can_be_invoked(client):
     invalid_body = await client.post("/tools/calculator/invoke", json=["not", "object"])
     assert invalid_body.status_code in {400, 422}
     assert "参数" in invalid_body.json()["detail"]
+
+
+async def test_tool_invoke_openapi_uses_response_model(client):
+    response = await client.get("/openapi.json")
+
+    assert response.status_code == 200
+    schema = response.json()["paths"]["/tools/{tool_name}/invoke"]["post"]["responses"]["200"]
+    assert schema["content"]["application/json"]["schema"]["$ref"].endswith("/ToolInvokeResponse")
+
+
+async def test_search_tool_returns_chinese_unavailable_when_tavily_key_missing(client):
+    response = await client.post("/tools/search/invoke", json={"query": "今天新闻"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is False
+    assert "搜索工具" in payload["message"]
+    assert "TAVILY_API_KEY" in payload["message"]
+
+
+async def test_close_registry_tools_continues_after_tool_close_failure():
+    from src.main import _close_registry_tools
+
+    failed_tool = _CloseTrackingTool(should_fail=True)
+    later_tool = _CloseTrackingTool()
+    registry = _FakeRegistry([failed_tool, later_tool])
+
+    await _close_registry_tools(registry)
+
+    assert failed_tool.closed is True
+    assert later_tool.closed is True
+
+
+class _FakeRegistry:
+    def __init__(self, tools):
+        self._tools = tools
+
+    def list_tools(self):
+        return self._tools
+
+
+class _CloseTrackingTool:
+    def __init__(self, should_fail=False):
+        self.should_fail = should_fail
+        self.closed = False
+
+    async def aclose(self):
+        self.closed = True
+        if self.should_fail:
+            raise RuntimeError("close failed")
