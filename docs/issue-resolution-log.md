@@ -19,3 +19,11 @@
 - 修改文件：`pyproject.toml`
 - 验证命令：`uv run pytest tests/unit/core/test_config.py -v`
 - 结果：PASS，配置测试可以正常收集并通过。
+
+## 2026-08-11 - aiosqlite 连接未激活时设置 row_factory 失败
+- 日期：2026-08-11
+- 现象：执行 `uv run pytest tests/unit/core/test_session_store.py -v` 时，两个 session_store 测试都在 `initialize()` 阶段失败，报错 `ValueError: no active connection`。
+- 根因：`aiosqlite.connect()` 返回的连接对象在进入 `async with` 前尚未激活，此时设置 `row_factory` 会访问未初始化的底层 SQLite 连接。
+- 修改文件：`src/core/session_store.py`
+- 验证命令：`uv run pytest tests/unit/core/test_session_store.py -v`
+- 结果：PASS，2 个 session_store 单测全部通过。
