@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 import inspect
 
 import pytest
@@ -87,7 +88,44 @@ async def test_context_builder_sorts_by_relevance_recency_and_store_score():
 
     assert isinstance(result, BuiltContext)
     assert result.compressed is False
-    assert [packet.metadata["id"] for packet in result.selected_packets[:2]] == ["mid", "old"]
+    assert [packet.metadata["id"] for packet in result.selected_packets[:2]] == ["old", "mid"]
+
+
+@pytest.mark.asyncio
+async def test_context_builder_uses_real_time_decay_for_recency_score():
+    now = datetime(2026, 8, 12, 0, 0, 0, tzinfo=UTC)
+    builder = ContextBuilder(
+        ContextConfig(
+            max_tokens=800,
+            recency_weight=0.3,
+            relevance_weight=0.7,
+            enable_compression=False,
+        ),
+        now_provider=lambda: now,
+    )
+    fresh_lower_relevance = ContextPacket(
+        "fresh unrelated packet",
+        now.isoformat(),
+        0.5,
+        {"id": "fresh"},
+    )
+    stale_higher_relevance = ContextPacket(
+        "stale unrelated packet",
+        (now - timedelta(days=60)).isoformat(),
+        0.6,
+        {"id": "stale"},
+    )
+
+    result = await builder.build(
+        task="totally different task",
+        system_policy="遵守安全策略",
+        history=[],
+        memory_packets=[stale_higher_relevance, fresh_lower_relevance],
+    )
+
+    assert [packet.metadata["id"] for packet in result.selected_packets] == ["fresh", "stale"]
+    assert builder._recency_score(fresh_lower_relevance.timestamp) == pytest.approx(1.0)
+    assert builder._recency_score(stale_higher_relevance.timestamp) == pytest.approx(0.1)
 
 
 @pytest.mark.asyncio

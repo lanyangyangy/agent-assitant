@@ -75,3 +75,11 @@
 - 修改文件：`tests/unit/agents/test_qwen_client.py`、`tests/unit/context/test_context_builder.py`、`tests/unit/agents/test_react_agent.py`、`src/agents/qwen_client.py`、`src/context/compress.py`、`src/context/builder.py`、`src/agents/react_agent.py`
 - 验证命令：`uv run pytest tests/unit/context tests/unit/agents tests/unit/core/test_streaming_trace.py -v`、`uv run pytest tests/unit -v`
 - 结果：已补齐 async MockTransport/AsyncClient、`await` 与 `async for` 回归测试；修复后定向 async 合约测试通过，最终验证命令通过。
+
+## 2026-08-12 - Agent 流式循环健壮性与工具调用多轮复核问题
+- 日期：2026-08-12
+- 现象：代码质量复核指出 `ReactAgent` 缺少 Qwen create/stream 与持久化阶段异常兜底；工具调用只处理首轮 `tool_calls`；tool message 多带 `name` 字段；空 assistant 回复和保存失败仍可能写入 memory；`ContextBuilder` recency/relevance 公式不符合规格；`QwenClient` 自建 `AsyncClient` 没有 ownership 与关闭能力。
+- 根因：Task 9 初版只覆盖最小成功路径和单轮工具调用，未覆盖模型异常、流式中断、多轮工具调用、严格 tool message schema、客户端生命周期、持久化失败和真实时间衰减。
+- 修改文件：`docs/issue-resolution-log.md`、`src/agents/qwen_client.py`、`src/agents/react_agent.py`、`src/context/builder.py`、`tests/unit/agents/test_qwen_client.py`、`tests/unit/agents/test_react_agent.py`、`tests/unit/context/test_context_builder.py`
+- 验证命令：`uv run pytest tests/unit/context tests/unit/agents tests/unit/core/test_streaming_trace.py -v`、`uv run pytest tests/unit -v`
+- 结果：新增异常兜底、多轮工具调用、严格 tool message schema、client ownership/close、空回复与持久化失败、真实时间衰减回归测试；修复后指定验证命令均通过。

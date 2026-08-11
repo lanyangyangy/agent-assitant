@@ -149,3 +149,41 @@ async def test_qwen_compressor_uses_create_completion_with_chinese_system_prompt
     assert fake_client.messages[0]["role"] == "system"
     assert "中文" in fake_client.messages[0]["content"]
     assert "回答用户问题" in fake_client.messages[1]["content"]
+
+
+@pytest.mark.asyncio
+async def test_qwen_client_does_not_close_injected_async_client():
+    injected = httpx.AsyncClient(transport=httpx.MockTransport(lambda request: httpx.Response(200)))
+    client = QwenClient(
+        api_key="test-key",
+        base_url="https://dashscope.example/v1",
+        model="qwen-plus",
+        http_client=injected,
+    )
+
+    await client.aclose()
+
+    assert injected.is_closed is False
+    await injected.aclose()
+
+
+@pytest.mark.asyncio
+async def test_qwen_client_closes_owned_async_client_and_context_manager():
+    client = QwenClient(
+        api_key="test-key",
+        base_url="https://dashscope.example/v1",
+        model="qwen-plus",
+    )
+
+    assert client.http_client.is_closed is False
+    await client.aclose()
+    assert client.http_client.is_closed is True
+
+    async with QwenClient(
+        api_key="test-key",
+        base_url="https://dashscope.example/v1",
+        model="qwen-plus",
+    ) as managed:
+        assert managed.http_client.is_closed is False
+
+    assert managed.http_client.is_closed is True

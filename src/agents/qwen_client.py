@@ -29,7 +29,18 @@ class QwenClient:
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
+        self._owns_client = http_client is None
         self.http_client = http_client or httpx.AsyncClient(timeout=60)
+
+    async def __aenter__(self) -> QwenClient:
+        return self
+
+    async def __aexit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        await self.aclose()
+
+    async def aclose(self) -> None:
+        if self._owns_client:
+            await self.http_client.aclose()
 
     async def create_completion(
         self,

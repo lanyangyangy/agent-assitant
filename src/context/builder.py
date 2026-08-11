@@ -3,8 +3,9 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+import math
 import re
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 from src.context.compress import SimpleCompressor
 from src.context.history import format_history
@@ -59,9 +60,11 @@ class ContextBuilder:
         self,
         config: ContextConfig | None = None,
         compressor: Compressor | None = None,
+        now_provider: Callable[[], datetime] | None = None,
     ):
         self.config = config or ContextConfig()
         self.compressor = compressor or SimpleCompressor(max_chars=1200)
+        self.now_provider = now_provider or (lambda: datetime.now(UTC))
 
     async def build(
         self,
@@ -86,19 +89,19 @@ class ContextBuilder:
 
     def _select_packets(self, task: str, packets: list[ContextPacket]) -> list[ContextPacket]:
         scored_packets = []
-        recency_scores = self._recency_scores(packets)
-        for index, packet in enumerate(packets):
+        for packet in packets:
             store_score = _clamp(packet.relevance_score)
             text_score = jaccard_similarity(task, packet.content)
-            if max(store_score, text_score) < self.config.min_relevance:
+            relevance_score = max(store_score, text_score)
+            if relevance_score < self.config.min_relevance:
                 continue
 
-            relevance = (0.65 * text_score) + (0.35 * store_score)
+            recency_score = self._recency_score(packet.timestamp)
             final_score = (
-                self.config.relevance_weight * relevance
-                + self.config.recency_weight * recency_scores[index]
+                self.config.relevance_weight * relevance_score
+                + self.config.recency_weight * recency_score
             )
-            scored_packets.append((final_score, relevance, recency_scores[index], packet))
+            scored_packets.append((final_score, relevance_score, recency_score, packet))
 
         scored_packets.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
         return [packet for _, _, _, packet in scored_packets]
@@ -129,28 +132,14 @@ class ContextBuilder:
             ]
         )
 
-    @staticmethod
-    def _recency_scores(packets: Sequence[ContextPacket]) -> list[float]:
-        if not packets:
-            return []
+    def _recency_score(self, timestamp: str) -> float:
+        parsed = _parse_timestamp(timestamp)
+        if parsed is None:
+            return 0.1
 
-        timestamps = [_parse_timestamp(packet.timestamp) for packet in packets]
-        valid_timestamps = [timestamp for timestamp in timestamps if timestamp is not None]
-        if not valid_timestamps:
-            return [0.0 for _ in packets]
-        if len(set(valid_timestamps)) == 1:
-            return [1.0 if timestamp is not None else 0.0 for timestamp in timestamps]
-
-        oldest = min(valid_timestamps)
-        newest = max(valid_timestamps)
-        span = (newest - oldest).total_seconds()
-        if span <= 0:
-            return [1.0 if timestamp is not None else 0.0 for timestamp in timestamps]
-
-        return [
-            0.0 if timestamp is None else (timestamp - oldest).total_seconds() / span
-            for timestamp in timestamps
-        ]
+        now = _normalize_datetime(self.now_provider())
+        age_hours = max(0.0, (now - parsed).total_seconds() / 3600)
+        return _clamp_to_range(math.exp(-0.1 * age_hours / 24), minimum=0.1, maximum=1.0)
 
 
 def _tokenize(text: str) -> Iterable[str]:
@@ -169,5 +158,15 @@ def _parse_timestamp(value: str) -> datetime | None:
     return parsed.astimezone(UTC)
 
 
+def _normalize_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
 def _clamp(value: float) -> float:
     return max(0.0, min(1.0, float(value)))
+
+
+def _clamp_to_range(value: float, minimum: float, maximum: float) -> float:
+    return max(minimum, min(maximum, float(value)))
