@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 from typing import Any
 
+import httpx
 import pytest
 
 
@@ -39,6 +40,14 @@ class FakeHttpClient:
 
     async def aclose(self) -> None:
         self.closed = True
+
+
+class FailingPostClient:
+    async def post(self, url: str, **kwargs: Any) -> FakeResponse:
+        raise httpx.RequestError("network down")
+
+    async def aclose(self) -> None:
+        return None
 
 
 def _search_module():
@@ -121,6 +130,35 @@ async def test_tavily_search_default_max_results_and_does_not_close_injected_cli
 
     assert client.post_calls[0]["json"]["max_results"] == 5
     assert client.closed is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("max_results", [True, 0, 11])
+async def test_tavily_search_rejects_invalid_max_results(max_results: Any):
+    client = FakeHttpClient(post_payloads=[{"answer": None, "results": []}])
+    tool = _search_module().TavilySearchTool(api_key="tavily-key", http_client=client)
+
+    with pytest.raises(ValueError) as exc_info:
+        await tool.run({"query": "bad max", "max_results": max_results})
+
+    assert "max_results" in str(exc_info.value)
+    assert "1-10" in str(exc_info.value)
+    assert client.post_calls == []
+
+
+@pytest.mark.asyncio
+async def test_tavily_search_request_error_returns_stable_chinese_registry_message():
+    errors = importlib.import_module("src.tools.errors")
+    registry = _registry_module().ToolRegistry()
+    registry.register(
+        _search_module().TavilySearchTool(api_key="tavily-key", http_client=FailingPostClient())
+    )
+
+    result = await registry.invoke("search", {"query": "network"})
+
+    assert result.success is False
+    assert result.error_code == errors.ToolErrorCode.EXECUTION_ERROR
+    assert "Tavily 搜索请求失败" in result.message
 
 
 @pytest.mark.asyncio

@@ -13,3 +13,12 @@ class ToolResponse:
     error_code: ToolErrorCode | None = None
     message: str = ""
     elapsed_ms: float = 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "success": self.success,
+            "data": self.data,
+            "error_code": self.error_code.value if self.error_code is not None else None,
+            "message": self.message,
+            "elapsed_ms": self.elapsed_ms,
+        }

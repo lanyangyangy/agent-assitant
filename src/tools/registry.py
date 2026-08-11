@@ -1,19 +1,28 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 import time
 from typing import Any
 
 from src.tools.base import BaseTool
 from src.tools.circuit_breaker import CircuitBreaker
-from src.tools.errors import ToolErrorCode
+from src.tools.errors import ToolErrorCode, ToolInputError
 from src.tools.response import ToolResponse
 
 
 class ToolRegistry:
-    def __init__(self, timeout_seconds: float = 180, failure_threshold: int = 3):
+    def __init__(
+        self,
+        timeout_seconds: float = 180,
+        failure_threshold: int = 3,
+        recovery_timeout_seconds: float = 60,
+    ):
         self.timeout_seconds = timeout_seconds
-        self.circuit_breaker = CircuitBreaker(failure_threshold=failure_threshold)
+        self.circuit_breaker = CircuitBreaker(
+            failure_threshold=failure_threshold,
+            recovery_timeout_seconds=recovery_timeout_seconds,
+        )
         self._tools: dict[str, BaseTool] = {}
 
     def register(self, tool: BaseTool) -> None:
@@ -21,19 +30,33 @@ class ToolRegistry:
             raise ValueError("工具名称不能为空。")
         self._tools[tool.name] = tool
 
-    def list_tools(self) -> list[str]:
+    def list_tools(self) -> list[BaseTool]:
+        return list(self._tools.values())
+
+    def list_tool_names(self) -> list[str]:
         return list(self._tools)
 
     def to_qwen_tools(self) -> list[dict[str, Any]]:
         return [self._to_qwen_tool(tool) for tool in self._tools.values()]
 
-    async def invoke(self, tool_name: str, arguments: dict[str, Any] | None = None) -> ToolResponse:
+    async def invoke(self, tool_name: str, arguments: Mapping[str, Any] | None = None) -> ToolResponse:
         started_at = time.perf_counter()
         tool = self._tools.get(tool_name)
         if tool is None:
             return self._error_response(
                 ToolErrorCode.NOT_FOUND,
                 f"未找到工具：{tool_name}",
+                started_at,
+            )
+
+        if arguments is None:
+            raw_arguments: Mapping[str, Any] = {}
+        elif isinstance(arguments, Mapping):
+            raw_arguments = arguments
+        else:
+            return self._error_response(
+                ToolErrorCode.INVALID_ARGUMENTS,
+                "工具参数必须是对象。",
                 started_at,
             )
 
@@ -44,7 +67,7 @@ class ToolRegistry:
                 started_at,
             )
 
-        prepared_arguments, missing_arguments = self._prepare_arguments(tool, arguments or {})
+        prepared_arguments, missing_arguments = self._prepare_arguments(tool, raw_arguments)
         if missing_arguments:
             missing = "、".join(missing_arguments)
             return self._error_response(
@@ -57,6 +80,12 @@ class ToolRegistry:
             data = await asyncio.wait_for(
                 tool.run(prepared_arguments),
                 timeout=self.timeout_seconds,
+            )
+        except ToolInputError as exc:
+            return self._error_response(
+                ToolErrorCode.INVALID_ARGUMENTS,
+                str(exc),
+                started_at,
             )
         except TimeoutError:
             self.circuit_breaker.record_failure(tool_name)
@@ -107,7 +136,7 @@ class ToolRegistry:
     @staticmethod
     def _prepare_arguments(
         tool: BaseTool,
-        arguments: dict[str, Any],
+        arguments: Mapping[str, Any],
     ) -> tuple[dict[str, Any], list[str]]:
         prepared = dict(arguments)
         missing = []

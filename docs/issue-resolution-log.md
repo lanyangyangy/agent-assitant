@@ -51,3 +51,11 @@
 - 修改文件：`docs/issue-resolution-log.md`、`tests/unit/tools/test_search_weather.py`、`src/tools/weather.py`
 - 验证命令：`uv run pytest tests/unit/tools -v`、`uv run pytest tests/unit -v`
 - 结果：新增工具名与 registry 调用回归测试，修正天气工具名后通过 `uv run pytest tests/unit/tools -v` 与 `uv run pytest tests/unit -v` 验证。
+
+## 2026-08-12 - 工具执行边界与熔断恢复能力不足
+- 日期：2026-08-12
+- 现象：代码质量复核指出 calculator 可执行无界幂运算、超长/过深/过多节点表达式、大数字与非有限浮点；工具输入错误被 registry 记为 `EXECUTION_ERROR` 并计入熔断；熔断器打开后没有恢复/半开探测；`list_tools()` 只返回名称；`invoke()` 未校验 `arguments` 类型；`ToolResponse` 缺少稳定字典序列化；Tavily `max_results` 未拒绝 bool 和越界值，HTTP 错误消息不够稳定。
+- 根因：首版工具系统只覆盖了最小可用路径，缺少资源消耗上限、用户输入错误类型、熔断状态机恢复窗口、API 层需要的对象列表与响应序列化契约。
+- 修改文件：`docs/issue-resolution-log.md`、`src/tools/__init__.py`、`src/tools/calculator.py`、`src/tools/circuit_breaker.py`、`src/tools/errors.py`、`src/tools/registry.py`、`src/tools/response.py`、`src/tools/search.py`、`src/tools/weather.py`、`tests/unit/tools/test_calculator.py`、`tests/unit/tools/test_registry_and_circuit_breaker.py`、`tests/unit/tools/test_search_weather.py`
+- 验证命令：`uv run pytest tests/unit/tools -v`、`uv run pytest tests/unit -v`
+- 结果：新增资源边界、输入错误分类、半开熔断、工具列表对象返回、参数类型校验、响应序列化和 Tavily 边界测试；修复后 `uv run pytest tests/unit/tools -v` 与 `uv run pytest tests/unit -v` 均通过。

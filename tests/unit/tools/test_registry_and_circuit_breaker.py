@@ -37,9 +37,11 @@ def _make_echo_tool_class():
 async def test_registry_outputs_qwen_compatible_schema_and_invokes_tool():
     _, _, errors, registry, response = _tool_modules()
     registry_obj = registry.ToolRegistry()
-    registry_obj.register(_make_echo_tool_class()())
+    echo_tool = _make_echo_tool_class()()
+    registry_obj.register(echo_tool)
 
-    assert registry_obj.list_tools() == ["echo"]
+    assert registry_obj.list_tools() == [echo_tool]
+    assert registry_obj.list_tool_names() == ["echo"]
     assert registry_obj.to_qwen_tools() == [
         {
             "type": "function",
@@ -69,6 +71,26 @@ async def test_registry_outputs_qwen_compatible_schema_and_invokes_tool():
     assert errors.ToolErrorCode.INVALID_ARGUMENTS.value == "INVALID_ARGUMENTS"
 
 
+def test_tool_response_to_dict_uses_stable_error_code_value():
+    _, _, errors, _, response = _tool_modules()
+
+    result = response.ToolResponse(
+        success=False,
+        data=None,
+        error_code=errors.ToolErrorCode.INVALID_ARGUMENTS,
+        message="参数无效",
+        elapsed_ms=1.5,
+    )
+
+    assert result.to_dict() == {
+        "success": False,
+        "data": None,
+        "error_code": "INVALID_ARGUMENTS",
+        "message": "参数无效",
+        "elapsed_ms": 1.5,
+    }
+
+
 @pytest.mark.asyncio
 async def test_missing_required_argument_returns_invalid_arguments_with_chinese_message():
     _, _, errors, registry, _ = _tool_modules()
@@ -82,6 +104,21 @@ async def test_missing_required_argument_returns_invalid_arguments_with_chinese_
     assert result.error_code == errors.ToolErrorCode.INVALID_ARGUMENTS
     assert "缺少" in result.message
     assert "text" in result.message
+
+
+@pytest.mark.asyncio
+async def test_non_mapping_arguments_return_invalid_arguments_without_raising():
+    _, _, errors, registry, _ = _tool_modules()
+    registry_obj = registry.ToolRegistry()
+    registry_obj.register(_make_echo_tool_class()())
+
+    result = await registry_obj.invoke("echo", "not-a-mapping")
+
+    assert result.success is False
+    assert result.data is None
+    assert result.error_code == errors.ToolErrorCode.INVALID_ARGUMENTS
+    assert "参数" in result.message
+    assert "对象" in result.message
 
 
 @pytest.mark.asyncio
@@ -112,6 +149,37 @@ def test_circuit_breaker_opens_after_three_failures_and_success_resets():
     breaker.record_success("demo")
 
     assert breaker.allow_request("demo") is True
+
+
+def test_circuit_breaker_allows_one_half_open_probe_after_recovery_timeout(monkeypatch):
+    _, circuit_breaker, _, _, _ = _tool_modules()
+    now = 100.0
+    monkeypatch.setattr(circuit_breaker.time, "monotonic", lambda: now)
+    breaker = circuit_breaker.CircuitBreaker(
+        failure_threshold=2,
+        recovery_timeout_seconds=5,
+    )
+
+    breaker.record_failure("api")
+    breaker.record_failure("api")
+
+    assert breaker.allow_request("api") is False
+
+    now = 104.9
+    assert breaker.allow_request("api") is False
+
+    now = 105.0
+    assert breaker.allow_request("api") is True
+    assert breaker.allow_request("api") is False
+
+    breaker.record_failure("api")
+    assert breaker.allow_request("api") is False
+
+    now = 110.0
+    assert breaker.allow_request("api") is True
+
+    breaker.record_success("api")
+    assert breaker.allow_request("api") is True
 
 
 @pytest.mark.asyncio

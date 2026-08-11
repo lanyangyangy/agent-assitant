@@ -5,6 +5,7 @@ from typing import Any
 import httpx
 
 from src.tools.base import BaseTool, ToolParameter
+from src.tools.errors import ToolInputError
 
 
 GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
@@ -27,11 +28,11 @@ class OpenMeteoWeatherTool(BaseTool):
     async def run(self, arguments: dict[str, Any]) -> dict[str, Any]:
         location = arguments.get("location")
         if not isinstance(location, str) or not location.strip():
-            raise ValueError("参数 location 必须是非空字符串。")
+            raise ToolInputError("参数 location 必须是非空字符串。")
 
         unit = arguments.get("unit", "celsius")
         if unit not in {"celsius", "fahrenheit"}:
-            raise ValueError("参数 unit 只能是 celsius 或 fahrenheit。")
+            raise ToolInputError("参数 unit 只能是 celsius 或 fahrenheit。")
 
         geocoding_response = await self._client.get(
             GEOCODING_URL,
@@ -46,7 +47,7 @@ class OpenMeteoWeatherTool(BaseTool):
         geocoding_payload = geocoding_response.json()
         locations = geocoding_payload.get("results") or []
         if not locations:
-            raise ValueError(f"未找到位置：{location}")
+            raise ToolInputError(f"未找到位置：{location}")
 
         found_location = locations[0]
         lat = found_location["latitude"]
