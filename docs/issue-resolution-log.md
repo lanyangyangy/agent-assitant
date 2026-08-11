@@ -27,3 +27,11 @@
 - 修改文件：`src/core/session_store.py`
 - 验证命令：`uv run pytest tests/unit/core/test_session_store.py -v`
 - 结果：PASS，2 个 session_store 单测全部通过。
+
+## 2026-08-12 - session message 写入竞态与删除级联覆盖不足
+- 日期：2026-08-12
+- 现象：代码质量复核指出 `add_message()` 使用先查询会话再插入消息的两步写法，若会话在两步之间被其他连接删除，可能因外键异常上冒导致后续 API 500；同时 `delete_session()` 缺少跨用户删除与消息级联清理测试。
+- 根因：消息写入没有用单条条件插入表达“仅当当前用户拥有会话时才插入”，测试也未覆盖删除边界。
+- 修改文件：`tests/unit/core/test_session_store.py`、`src/core/session_store.py`
+- 验证命令：`uv run pytest tests/unit/core/test_session_store.py -v`、`uv run pytest tests/unit -v`
+- 结果：PASS，session_store 定向测试与 unit 测试全部通过。

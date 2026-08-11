@@ -129,27 +129,36 @@ class SQLiteSessionStore:
         content: str,
     ) -> MessageRecord | None:
         async with self._connect() as db:
-            async with db.execute(
-                """
-                SELECT 1
-                FROM sessions
-                WHERE user_id = ? AND session_id = ?
-                """,
-                (user_id, session_id),
-            ) as cursor:
-                session_exists = await cursor.fetchone()
-
-            if session_exists is None:
+            created_at = self._now()
+            try:
+                cursor = await db.execute(
+                    """
+                    INSERT INTO messages (user_id, session_id, role, content, created_at)
+                    SELECT ?, ?, ?, ?, ?
+                    WHERE EXISTS (
+                        SELECT 1
+                        FROM sessions
+                        WHERE user_id = ? AND session_id = ?
+                    )
+                    """,
+                    (
+                        user_id,
+                        session_id,
+                        role,
+                        content,
+                        created_at,
+                        user_id,
+                        session_id,
+                    ),
+                )
+            except aiosqlite.IntegrityError:
+                await db.rollback()
                 return None
 
-            created_at = self._now()
-            cursor = await db.execute(
-                """
-                INSERT INTO messages (user_id, session_id, role, content, created_at)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (user_id, session_id, role, content, created_at),
-            )
+            if cursor.rowcount == 0:
+                await db.rollback()
+                return None
+
             await db.commit()
 
             return MessageRecord(
