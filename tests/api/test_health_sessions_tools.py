@@ -26,11 +26,11 @@ async def test_sessions_are_created_listed_and_deleted_per_user(client):
 
     alice_list = await client.get("/sessions", headers={"X-User-Id": "alice"})
     assert alice_list.status_code == 200
-    assert alice_list.json() == [alice_session]
+    assert alice_list.json() == {"sessions": [alice_session]}
 
     bob_list = await client.get("/sessions", headers={"X-User-Id": "bob"})
     assert bob_list.status_code == 200
-    assert bob_list.json() == []
+    assert bob_list.json() == {"sessions": []}
 
     bob_delete = await client.delete(
         f"/sessions/{alice_session['session_id']}",
@@ -46,7 +46,27 @@ async def test_sessions_are_created_listed_and_deleted_per_user(client):
     assert alice_delete.status_code == 204
 
     empty_after_delete = await client.get("/sessions", headers={"X-User-Id": "alice"})
-    assert empty_after_delete.json() == []
+    assert empty_after_delete.json() == {"sessions": []}
+
+
+async def test_missing_user_id_is_required_for_all_user_scoped_endpoints(client):
+    get_sessions = await client.get("/sessions")
+    assert get_sessions.status_code == 400
+    assert "X-User-Id" in get_sessions.json()["detail"]
+    assert "缺少" in get_sessions.json()["detail"]
+
+    delete_session = await client.delete("/sessions/not-found")
+    assert delete_session.status_code == 400
+    assert "X-User-Id" in delete_session.json()["detail"]
+    assert "缺少" in delete_session.json()["detail"]
+
+    chat_stream = await client.post(
+        "/chat/stream",
+        json={"session_id": "not-found", "message": "你好"},
+    )
+    assert chat_stream.status_code == 400
+    assert "X-User-Id" in chat_stream.json()["detail"]
+    assert "缺少" in chat_stream.json()["detail"]
 
 
 async def test_tools_are_listed_and_calculator_can_be_invoked(client):

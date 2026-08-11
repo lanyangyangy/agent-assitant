@@ -83,3 +83,11 @@
 - 修改文件：`docs/issue-resolution-log.md`、`src/agents/qwen_client.py`、`src/agents/react_agent.py`、`src/context/builder.py`、`tests/unit/agents/test_qwen_client.py`、`tests/unit/agents/test_react_agent.py`、`tests/unit/context/test_context_builder.py`
 - 验证命令：`uv run pytest tests/unit/context tests/unit/agents tests/unit/core/test_streaming_trace.py -v`、`uv run pytest tests/unit -v`
 - 结果：新增异常兜底、多轮工具调用、严格 tool message schema、client ownership/close、空回复与持久化失败、真实时间衰减回归测试；修复后指定验证命令均通过。
+
+## 2026-08-12 - sessions 列表响应契约偏差
+- 日期：2026-08-12
+- 现象：规格复核指出 `GET /sessions` 当前返回顶层数组，但公开 API 契约要求返回 `{ "sessions": [...] }`；同时缺少 `GET /sessions`、`DELETE /sessions/{id}`、`POST /chat/stream` 在缺失 `X-User-Id` 时返回 400 中文 detail 的覆盖。
+- 根因：Task 10 首版 API 测试把列表响应断言成数组，导致实现与规格偏离；缺请求头测试只覆盖了 `POST /sessions`，未覆盖其他依赖同一鉴权头的入口。
+- 修改文件：`docs/issue-resolution-log.md`、`tests/api/test_health_sessions_tools.py`、`src/api/schemas.py`、`src/api/routes.py`
+- 验证命令：`uv run pytest tests/api -v`、`uv run pytest tests/unit tests/api -v`
+- 结果：PASS，API 定向测试 6 项通过，unit+API 组合测试 92 项通过。

@@ -19,6 +19,7 @@ from src.api.dependencies import (
 from src.api.schemas import (
     ChatStreamRequest,
     HealthResponse,
+    SessionListResponse,
     SessionResponse,
     ToolParameterResponse,
     ToolResponseSchema,
@@ -59,13 +60,15 @@ async def create_session(
     return SessionResponse.from_record(session)
 
 
-@router.get("/sessions", response_model=list[SessionResponse])
+@router.get("/sessions", response_model=SessionListResponse)
 async def list_sessions(
     user_id: str = Depends(require_user_id),
     session_store: SQLiteSessionStore = Depends(get_session_store),
-) -> list[SessionResponse]:
+) -> SessionListResponse:
     sessions = await session_store.list_sessions(user_id)
-    return [SessionResponse.from_record(session) for session in sessions]
+    return SessionListResponse(
+        sessions=[SessionResponse.from_record(session) for session in sessions],
+    )
 
 
 @router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)

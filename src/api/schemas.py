@@ -29,6 +29,10 @@ class SessionResponse(BaseModel):
         )
 
 
+class SessionListResponse(BaseModel):
+    sessions: list[SessionResponse]
+
+
 class ToolParameterResponse(BaseModel):
     name: str
     type: str
