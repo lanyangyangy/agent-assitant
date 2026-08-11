@@ -45,3 +45,8 @@ class CircuitBreaker:
 
     def record_success(self, tool_name: str) -> None:
         self._states.pop(tool_name, None)
+
+    def release_probe(self, tool_name: str) -> None:
+        state = self._states.get(tool_name)
+        if state is not None and state.opened_at is not None:
+            state.half_open_probe_in_progress = False

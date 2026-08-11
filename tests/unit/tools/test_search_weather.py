@@ -50,6 +50,14 @@ class FailingPostClient:
         return None
 
 
+class FailingGetClient:
+    async def get(self, url: str, **kwargs: Any) -> FakeResponse:
+        raise httpx.RequestError("network down")
+
+    async def aclose(self) -> None:
+        return None
+
+
 def _search_module():
     return importlib.import_module("src.tools.search")
 
@@ -309,3 +317,16 @@ async def test_open_meteo_weather_can_be_invoked_through_registry_by_spec_name()
     assert result.success is True
     assert result.data["location"]["name"] == "Beijing"
     assert result.data["current"]["temperature"] == 22.0
+
+
+@pytest.mark.asyncio
+async def test_open_meteo_weather_request_error_returns_stable_chinese_registry_message():
+    errors = importlib.import_module("src.tools.errors")
+    registry = _registry_module().ToolRegistry()
+    registry.register(_weather_module().OpenMeteoWeatherTool(http_client=FailingGetClient()))
+
+    result = await registry.invoke("get_weather", {"location": "Beijing"})
+
+    assert result.success is False
+    assert result.error_code == errors.ToolErrorCode.EXECUTION_ERROR
+    assert "Open-Meteo 天气请求失败" in result.message

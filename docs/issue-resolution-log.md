@@ -59,3 +59,11 @@
 - 修改文件：`docs/issue-resolution-log.md`、`src/tools/__init__.py`、`src/tools/calculator.py`、`src/tools/circuit_breaker.py`、`src/tools/errors.py`、`src/tools/registry.py`、`src/tools/response.py`、`src/tools/search.py`、`src/tools/weather.py`、`tests/unit/tools/test_calculator.py`、`tests/unit/tools/test_registry_and_circuit_breaker.py`、`tests/unit/tools/test_search_weather.py`
 - 验证命令：`uv run pytest tests/unit/tools -v`、`uv run pytest tests/unit -v`
 - 结果：新增资源边界、输入错误分类、半开熔断、工具列表对象返回、参数类型校验、响应序列化和 Tavily 边界测试；修复后 `uv run pytest tests/unit/tools -v` 与 `uv run pytest tests/unit -v` 均通过。
+
+## 2026-08-12 - 半开探测释放与浮点幂溢出输入分类
+- 日期：2026-08-12
+- 现象：质量 re-review 指出半开探测期间遇到缺参或 `ToolInputError` 会让 `half_open_probe_in_progress` 长期保持占用，导致后续合法请求一直返回 `CIRCUIT_OPEN`；同时 calculator 的 float 幂运算可能在 `_ensure_safe_number()` 前抛出 `OverflowError`，被 registry 归为 `EXECUTION_ERROR` 并计入熔断。
+- 根因：熔断器缺少“用户输入错误释放半开探测”的状态转换；calculator 只在幂运算前限制指数值和整数位数，未捕获算术溢出，也未预估 float 幂结果规模。
+- 修改文件：`docs/issue-resolution-log.md`、`src/tools/calculator.py`、`src/tools/circuit_breaker.py`、`src/tools/registry.py`、`src/tools/weather.py`、`tests/unit/tools/test_calculator.py`、`tests/unit/tools/test_registry_and_circuit_breaker.py`、`tests/unit/tools/test_search_weather.py`
+- 验证命令：`uv run pytest tests/unit/tools -v`、`uv run pytest tests/unit -v`
+- 结果：新增半开输入错误释放、float 幂溢出输入分类和 Weather 网络错误包装回归测试；修复后 `uv run pytest tests/unit/tools -v` 与 `uv run pytest tests/unit -v` 均通过。

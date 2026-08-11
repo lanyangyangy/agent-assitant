@@ -124,3 +124,21 @@ async def test_invalid_calculator_inputs_do_not_trip_circuit_breaker():
 
     assert valid.success is True
     assert valid.data == {"result": 4}
+
+
+@pytest.mark.asyncio
+async def test_float_power_overflow_is_invalid_arguments_and_does_not_trip_circuit_breaker():
+    errors, registry = _registry_modules()
+    registry_obj = registry.ToolRegistry(failure_threshold=3)
+    registry_obj.register(_calculator_module().CalculatorTool())
+
+    for _ in range(3):
+        overflow = await registry_obj.invoke("calculator", {"expression": "1e50 ** 100"})
+        assert overflow.success is False
+        assert overflow.error_code == errors.ToolErrorCode.INVALID_ARGUMENTS
+        assert "过大" in overflow.message or "溢出" in overflow.message
+
+    valid = await registry_obj.invoke("calculator", {"expression": "3 * 3"})
+
+    assert valid.success is True
+    assert valid.data == {"result": 9}

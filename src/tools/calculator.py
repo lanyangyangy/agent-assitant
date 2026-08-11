@@ -71,7 +71,11 @@ def _evaluate_node(node: ast.AST) -> Number:
             raise ToolInputError("不能除零。")
         if isinstance(node.op, ast.Pow):
             _validate_power(left, right)
-        return _ensure_safe_number(operation(left, right), "计算结果")
+        try:
+            result = operation(left, right)
+        except ArithmeticError as exc:
+            raise ToolInputError("算术运算溢出或结果不可用。") from exc
+        return _ensure_safe_number(result, "计算结果")
 
     raise ToolInputError(f"不允许的表达式：{type(node).__name__}")
 
@@ -121,6 +125,10 @@ def _validate_power(base: Number, exponent: Number) -> None:
         estimated_digits = _integer_digits(base) * exponent
         if estimated_digits > MAX_INTEGER_DIGITS:
             raise ToolInputError(f"幂运算结果过大，整数最多允许 {MAX_INTEGER_DIGITS} 位。")
+    if isinstance(base, float) and exponent > 0 and abs(base) > 1:
+        estimated_log10 = float(exponent) * math.log10(abs(base))
+        if estimated_log10 > math.log10(MAX_ABSOLUTE_FLOAT):
+            raise ToolInputError(f"幂运算结果过大，绝对值最多允许 {MAX_ABSOLUTE_FLOAT:g}。")
 
 
 def _ensure_safe_number(value: Any, label: str) -> Number:

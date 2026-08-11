@@ -183,6 +183,41 @@ def test_circuit_breaker_allows_one_half_open_probe_after_recovery_timeout(monke
 
 
 @pytest.mark.asyncio
+async def test_half_open_input_errors_release_probe_and_allow_later_valid_request(monkeypatch):
+    _, circuit_breaker, errors, registry, _ = _tool_modules()
+    calculator = importlib.import_module("src.tools.calculator")
+    now = 100.0
+    monkeypatch.setattr(circuit_breaker.time, "monotonic", lambda: now)
+    registry_obj = registry.ToolRegistry(
+        failure_threshold=1,
+        recovery_timeout_seconds=5,
+    )
+    registry_obj.register(calculator.CalculatorTool())
+
+    registry_obj.circuit_breaker.record_failure("calculator")
+    now = 105.0
+
+    missing = await registry_obj.invoke("calculator", {})
+    valid_after_missing = await registry_obj.invoke("calculator", {"expression": "1 + 1"})
+
+    assert missing.success is False
+    assert missing.error_code == errors.ToolErrorCode.INVALID_ARGUMENTS
+    assert valid_after_missing.success is True
+    assert valid_after_missing.data == {"result": 2}
+
+    registry_obj.circuit_breaker.record_failure("calculator")
+    now = 110.0
+
+    invalid_expression = await registry_obj.invoke("calculator", {"expression": "1 / 0"})
+    valid_after_input_error = await registry_obj.invoke("calculator", {"expression": "2 + 2"})
+
+    assert invalid_expression.success is False
+    assert invalid_expression.error_code == errors.ToolErrorCode.INVALID_ARGUMENTS
+    assert valid_after_input_error.success is True
+    assert valid_after_input_error.data == {"result": 4}
+
+
+@pytest.mark.asyncio
 async def test_registry_returns_timeout_when_tool_runs_too_long():
     base, _, errors, registry, _ = _tool_modules()
 

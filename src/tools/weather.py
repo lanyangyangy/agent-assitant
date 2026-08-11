@@ -34,16 +34,23 @@ class OpenMeteoWeatherTool(BaseTool):
         if unit not in {"celsius", "fahrenheit"}:
             raise ToolInputError("参数 unit 只能是 celsius 或 fahrenheit。")
 
-        geocoding_response = await self._client.get(
-            GEOCODING_URL,
-            params={
-                "name": location,
-                "count": 1,
-                "language": "zh",
-                "format": "json",
-            },
-        )
-        geocoding_response.raise_for_status()
+        try:
+            geocoding_response = await self._client.get(
+                GEOCODING_URL,
+                params={
+                    "name": location,
+                    "count": 1,
+                    "language": "zh",
+                    "format": "json",
+                },
+            )
+            geocoding_response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code if exc.response is not None else "未知"
+            raise RuntimeError(f"Open-Meteo 天气请求失败：HTTP {status_code}。") from exc
+        except httpx.RequestError as exc:
+            raise RuntimeError("Open-Meteo 天气请求失败：网络请求异常。") from exc
+
         geocoding_payload = geocoding_response.json()
         locations = geocoding_payload.get("results") or []
         if not locations:
@@ -54,16 +61,23 @@ class OpenMeteoWeatherTool(BaseTool):
         lon = found_location["longitude"]
         name = found_location.get("name", location)
 
-        forecast_response = await self._client.get(
-            FORECAST_URL,
-            params={
-                "latitude": lat,
-                "longitude": lon,
-                "current": CURRENT_FIELDS,
-                "temperature_unit": unit,
-            },
-        )
-        forecast_response.raise_for_status()
+        try:
+            forecast_response = await self._client.get(
+                FORECAST_URL,
+                params={
+                    "latitude": lat,
+                    "longitude": lon,
+                    "current": CURRENT_FIELDS,
+                    "temperature_unit": unit,
+                },
+            )
+            forecast_response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code if exc.response is not None else "未知"
+            raise RuntimeError(f"Open-Meteo 天气请求失败：HTTP {status_code}。") from exc
+        except httpx.RequestError as exc:
+            raise RuntimeError("Open-Meteo 天气请求失败：网络请求异常。") from exc
+
         forecast_payload = forecast_response.json()
         current = forecast_payload.get("current", {})
         current_units = forecast_payload.get("current_units", {})

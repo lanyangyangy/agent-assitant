@@ -70,6 +70,7 @@ class ToolRegistry:
         prepared_arguments, missing_arguments = self._prepare_arguments(tool, raw_arguments)
         if missing_arguments:
             missing = "、".join(missing_arguments)
+            self.circuit_breaker.release_probe(tool_name)
             return self._error_response(
                 ToolErrorCode.INVALID_ARGUMENTS,
                 f"缺少必填参数：{missing}",
@@ -82,6 +83,7 @@ class ToolRegistry:
                 timeout=self.timeout_seconds,
             )
         except ToolInputError as exc:
+            self.circuit_breaker.release_probe(tool_name)
             return self._error_response(
                 ToolErrorCode.INVALID_ARGUMENTS,
                 str(exc),
