@@ -123,3 +123,11 @@
 - 修改文件：`docs/issue-resolution-log.md`
 - 验证命令：`cd frontend; npm test -- src/api/config.test.ts; npm run build`
 - 结果：已补充 RED 失败摘要 `Failed to resolve import "./config"`；当前验证命令通过。
+
+## 2026-08-12 - 前端 HTTP 请求内部参数泄漏到 fetch
+- 日期：2026-08-12
+- 现象：执行 `cd frontend; npm test -- src/api/http.test.ts src/api/config.test.ts` 时，`请求会话列表时注入 X-User-Id 请求头` 失败；`fetchMock` 收到的 options 里包含非标准 `userId: "alice"`，`headers` 是 `Headers {}`，断言无法看到 `X-User-Id`。
+- 根因：`requestJson()` 用 `{ ...options, headers }` 直接传给 `fetch`，没有先剥离内部封装字段 `userId`；同时 Headers 对象不利于测试稳定检查具体请求头。
+- 修改文件：`docs/issue-resolution-log.md`、`frontend/src/api/http.ts`
+- 验证命令：`cd frontend; npm test -- src/api/http.test.ts src/api/config.test.ts`
+- 结果：已剥离内部 `userId` 字段，并稳定传入 `X-User-Id` 请求头；定向测试 2 个文件、4 项断言通过。
