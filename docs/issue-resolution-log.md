@@ -99,3 +99,19 @@
 - 修改文件：`docs/issue-resolution-log.md`、`tests/api/test_chat_stream.py`、`tests/api/test_health_sessions_tools.py`、`src/api/schemas.py`、`src/api/routes.py`、`src/main.py`、`src/agents/react_agent.py`
 - 验证命令：`uv run pytest tests/api -v`、`uv run pytest tests/unit tests/api -v`
 - 结果：PASS，API 定向测试 17 项通过，unit+API 组合测试 104 项通过。
+
+## 2026-08-12 - 前端首次 npm install 超时
+- 日期：2026-08-12
+- 现象：执行 `npm install` 时命令在 124 秒后超时，未返回明确成功状态。
+- 根因：首次安装前端依赖耗时超过当前工具命令超时时间，属于依赖安装环境问题，不是预期的 TDD 红灯。
+- 修改文件：`docs/issue-resolution-log.md`
+- 验证命令：待重新执行 `npm install` 与 `npm test -- src/api/config.test.ts`
+- 结果：重新执行 `npm install` 成功；随后 `npm test -- src/api/config.test.ts` 通过。
+
+## 2026-08-12 - 前端 build 类型配置失败
+- 日期：2026-08-12
+- 现象：执行 `npm run build` 时失败，报错包括 `vite.config.ts` 中 `test` 不是 `UserConfigExport` 已知属性，以及 referenced project `tsconfig.node.json` 不能禁用 emit。
+- 根因：Vite 配置未使用 Vitest 的类型增强入口；同时 `tsconfig.node.json` 作为 TypeScript project reference 配置了 `noEmit`，与 `tsc -b` 约束冲突。
+- 修改文件：`docs/issue-resolution-log.md`、`frontend/vite.config.ts`、`frontend/tsconfig.node.json`
+- 验证命令：待重新执行 `npm test -- src/api/config.test.ts` 与 `npm run build`
+- 结果：已修正 Vitest/Vite 类型入口与 TypeScript project reference 配置；`npm test -- src/api/config.test.ts` 与 `npm run build` 均通过。
