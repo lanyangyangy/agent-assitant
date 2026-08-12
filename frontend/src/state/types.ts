@@ -1,4 +1,4 @@
-import type { SseEvent } from "../api/types";
+import type { MessageRecord, SseEvent } from "../api/types";
 
 export type ChatRole = "user" | "assistant";
 
@@ -25,6 +25,7 @@ export interface ChatState {
 
 export type ChatAction =
   | { type: "reset_for_session" }
+  | { type: "load_messages"; messages: MessageRecord[] }
   | { type: "user_message"; content: string }
   | { type: "start_stream" }
   | { type: "stream_event"; event: SseEvent };

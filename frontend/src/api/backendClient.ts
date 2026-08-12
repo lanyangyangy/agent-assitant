@@ -3,6 +3,7 @@ import { streamSseEvents } from "./sse";
 import type {
   ChatStreamRequest,
   HealthResponse,
+  MessageListResponse,
   SessionListResponse,
   SessionRecord,
   SseEvent,
@@ -19,6 +20,7 @@ export interface BackendClientOptions {
 export interface BackendClient {
   getHealth(): Promise<HealthResponse>;
   listSessions(userId: string): Promise<SessionListResponse>;
+  listMessages(userId: string, sessionId: string): Promise<MessageListResponse>;
   createSession(userId: string): Promise<SessionRecord>;
   deleteSession(userId: string, sessionId: string): Promise<void>;
   listTools(): Promise<ToolSchema[]>;
@@ -32,6 +34,13 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
     getHealth: () => requestJson<HealthResponse>(options.baseUrl, "/health", {}, fetchImpl),
     listSessions: (userId) =>
       requestJson<SessionListResponse>(options.baseUrl, "/sessions", { userId }, fetchImpl),
+    listMessages: (userId, sessionId) =>
+      requestJson<MessageListResponse>(
+        options.baseUrl,
+        `/sessions/${sessionId}/messages`,
+        { userId },
+        fetchImpl,
+      ),
     createSession: (userId) =>
       requestJson<SessionRecord>(
         options.baseUrl,

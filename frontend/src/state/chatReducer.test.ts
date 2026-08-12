@@ -42,6 +42,39 @@ describe("聊天状态 reducer", () => {
     expect(state.events[1].summary).toContain("437");
   });
 
+  it("加载后端历史消息时替换当前聊天记录并清空事件", () => {
+    let state = createInitialChatState();
+    state = chatReducer(state, { type: "user_message", content: "临时消息" });
+    state = chatReducer(state, {
+      type: "stream_event",
+      event: { event: "tool_call", data: { name: "calculator" } },
+    });
+
+    state = chatReducer(state, {
+      type: "load_messages",
+      messages: [
+        {
+          id: 10,
+          role: "user",
+          content: "历史问题",
+          created_at: "2026-08-12T00:00:00.000Z",
+        },
+        {
+          id: 11,
+          role: "assistant",
+          content: "历史回答",
+          created_at: "2026-08-12T00:00:01.000Z",
+        },
+      ],
+    });
+
+    expect(state.messages).toEqual([
+      { id: "history-10", role: "user", content: "历史问题" },
+      { id: "history-11", role: "assistant", content: "历史回答" },
+    ]);
+    expect(state.events).toEqual([]);
+  });
+
   it("收到 error 时结束生成状态并显示中文错误", () => {
     let state = createInitialChatState();
     state = chatReducer(state, { type: "start_stream" });

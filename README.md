@@ -34,6 +34,7 @@ trace 日志写入 `APP_DATA_DIR/traces`。
 - `POST /sessions`：创建当前用户会话，需要 `X-User-Id` 请求头。
 - `GET /sessions`：列出当前用户会话，需要 `X-User-Id` 请求头。
 - `DELETE /sessions/{session_id}`：删除当前用户会话；不存在或无权访问统一返回 404。
+- `GET /sessions/{session_id}/messages`：读取当前用户某个会话的最近消息，需要 `X-User-Id` 请求头。
 - `GET /tools`：列出 `calculator`、`search`、`get_weather` 的名称、描述和参数。
 - `POST /tools/{tool_name}/invoke`：直接调用工具，请求体必须是 JSON object。
 - `POST /chat/stream`：流式聊天，需要 `X-User-Id`，请求体包含 `session_id`、`message` 和可选 `metadata`，响应为 `text/event-stream`。
@@ -113,6 +114,12 @@ npm run dev -- --port 5173
 
 ```text
 http://127.0.0.1:5173
+```
+
+前端默认会在浏览器 `localStorage` 中生成并复用 `local-user-xxxx` 用户 ID，避免所有本地调试都堆到固定 `alice` 用户下。需要固定用户时可以设置：
+
+```bash
+$env:VITE_DEFAULT_USER_ID="alice"
 ```
 
 前端测试：

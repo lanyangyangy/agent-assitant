@@ -16,6 +16,17 @@ export interface SessionListResponse {
   sessions: SessionRecord[];
 }
 
+export interface MessageRecord {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
+}
+
+export interface MessageListResponse {
+  messages: MessageRecord[];
+}
+
 export interface ToolParameter {
   name: string;
   type: string;

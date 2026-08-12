@@ -19,6 +19,8 @@ from src.api.dependencies import (
 from src.api.schemas import (
     ChatStreamRequest,
     HealthResponse,
+    MessageListResponse,
+    MessageResponse,
     SessionListResponse,
     SessionResponse,
     ToolInvokeResponse,
@@ -86,6 +88,25 @@ async def delete_session(
             detail="会话不存在或无权访问。",
         )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/sessions/{session_id}/messages", response_model=MessageListResponse)
+async def list_session_messages(
+    session_id: str,
+    user_id: str = Depends(require_user_id),
+    session_store: SQLiteSessionStore = Depends(get_session_store),
+) -> MessageListResponse:
+    session = await session_store.get_session(user_id, session_id)
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="会话不存在或无权访问。",
+        )
+
+    messages = await session_store.get_recent_messages(user_id, session_id, limit=50)
+    return MessageListResponse(
+        messages=[MessageResponse.from_record(message) for message in messages],
+    )
 
 
 @router.get("/tools", response_model=list[ToolResponseSchema])

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from src.core.session_store import SessionRecord
+from src.core.session_store import MessageRecord, SessionRecord
 
 
 class HealthResponse(BaseModel):
@@ -31,6 +31,26 @@ class SessionResponse(BaseModel):
 
 class SessionListResponse(BaseModel):
     sessions: list[SessionResponse]
+
+
+class MessageResponse(BaseModel):
+    id: int
+    role: Literal["user", "assistant"]
+    content: str
+    created_at: str
+
+    @classmethod
+    def from_record(cls, record: MessageRecord) -> MessageResponse:
+        return cls(
+            id=record.id,
+            role=record.role,
+            content=record.content,
+            created_at=record.created_at,
+        )
+
+
+class MessageListResponse(BaseModel):
+    messages: list[MessageResponse]
 
 
 class ToolParameterResponse(BaseModel):

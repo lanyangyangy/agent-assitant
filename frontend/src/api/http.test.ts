@@ -31,4 +31,32 @@ describe("后端 API 客户端", () => {
 
     await expect(client.getHealth()).rejects.toThrow("无法连接后端，请确认服务已启动。");
   });
+
+  it("删除会话收到 204 空响应时视为成功", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+
+    const client = createBackendClient({ baseUrl: "/api", fetchImpl: fetchMock });
+
+    await expect(client.deleteSession("alice", "session-1")).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/sessions/session-1",
+      expect.objectContaining({
+        method: "DELETE",
+        headers: expect.objectContaining({ "X-User-Id": "alice" }),
+      }),
+    );
+  });
+
+  it("成功响应不是 JSON 时返回中文代理提示", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response("<!doctype html><html></html>", {
+        status: 200,
+        headers: { "Content-Type": "text/html" },
+      }),
+    );
+
+    const client = createBackendClient({ baseUrl: "/api", fetchImpl: fetchMock });
+
+    await expect(client.getHealth()).rejects.toThrow("后端返回内容不是 JSON，请确认前端代理或 API 地址。");
+  });
 });

@@ -3,5 +3,17 @@ export function getApiBaseUrl(): string {
 }
 
 export function getDefaultUserId(): string {
-  return import.meta.env.VITE_DEFAULT_USER_ID || "alice";
+  if (import.meta.env.VITE_DEFAULT_USER_ID) {
+    return import.meta.env.VITE_DEFAULT_USER_ID;
+  }
+
+  const storageKey = "agent-console-user-id";
+  const storedUserId = localStorage.getItem(storageKey);
+  if (storedUserId) {
+    return storedUserId;
+  }
+
+  const generatedUserId = `local-user-${crypto.randomUUID().slice(0, 8)}`;
+  localStorage.setItem(storageKey, generatedUserId);
+  return generatedUserId;
 }

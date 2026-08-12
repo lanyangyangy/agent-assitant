@@ -211,3 +211,91 @@
 - 修改文件：`docs/issue-resolution-log.md`、`frontend/vite.config.ts`
 - 验证命令：`cd frontend; npm test`
 - 结果：已在 Vitest 配置中排除 `e2e/**`；`npm test` 5 个文件、15 项测试通过。
+
+## 2026-08-12 - 前端会话删除与切换历史记录缺失
+- 日期：2026-08-12
+- 现象：界面打开后会看到本地 SQLite 中已有的多条历史会话；点击删除会话可能提示删除失败；切换会话后聊天区被清空，看不到该会话之前的聊天记录；代理异常时还可能显示 `Unexpected token '<'`。
+- 根因：后端只暴露会话列表，没有暴露按会话读取消息的接口；前端切换会话时只能重置本地 reducer；`DELETE /sessions/{id}` 的 204 空响应被 HTTP 封装继续按 JSON 解析；成功响应若拿到前端 HTML 没有转换成中文诊断。
+- 修改文件：`docs/issue-resolution-log.md`、`tests/api/test_health_sessions_tools.py`、`src/api/schemas.py`、`src/api/routes.py`、`frontend/src/api/http.test.ts`、`frontend/src/api/http.ts`、`frontend/src/api/types.ts`、`frontend/src/api/backendClient.ts`、`frontend/src/state/chatReducer.test.ts`、`frontend/src/state/types.ts`、`frontend/src/state/chatReducer.ts`、`frontend/src/test/fakeApi.ts`、`frontend/src/components/AgentConsole.test.tsx`、`frontend/src/components/AgentConsole.tsx`
+- 验证命令：`uv run pytest tests/api/test_health_sessions_tools.py::test_session_messages_are_listed_per_user_after_chat -v`、`uv run pytest tests/api/test_health_sessions_tools.py -v`、`cd frontend; npm test -- src/api/config.test.ts src/api/http.test.ts src/state/chatReducer.test.ts src/components/AgentConsole.test.tsx`、`cd frontend; npm run build`
+- 结果：PASS，消息读取接口、204 删除、切换会话历史恢复和中文代理错误处理的定向测试通过；前端构建通过。
+
+## 2026-08-12 - 前端默认用户固定导致历史会话堆积
+- 日期：2026-08-12
+- 现象：前端首次打开即显示多个旧会话，容易误以为系统自动创建了会话。
+- 根因：默认用户 ID 固定为 `alice`，手工调试、自动化联调和多次刷新都会复用同一个后端用户空间；真实 SQLite 会持久保存历史会话。
+- 修改文件：`docs/issue-resolution-log.md`、`frontend/src/api/config.test.ts`、`frontend/src/api/config.ts`
+- 验证命令：`cd frontend; npm test -- src/api/config.test.ts src/api/http.test.ts src/state/chatReducer.test.ts src/components/AgentConsole.test.tsx`
+- 结果：PASS，默认用户 ID 改为浏览器本地生成并复用，相关前端定向测试通过。
+
+## 2026-08-12 - 前端 E2E 历史会话断言命中重复文本
+- 日期：2026-08-12
+- 现象：执行 `cd frontend; npm run e2e -- --project=desktop` 时，新增的“切换会话恢复历史并支持删除”用例失败；`3 + 4 = 7` 同时出现在聊天气泡和右侧事件 JSON，Playwright strict mode 报匹配到 2 个元素。
+- 根因：E2E 使用全页面 `getByText()` 断言聊天内容，没有限定到聊天面板；会话短 ID 断言也没有限定到会话列表。
+- 修改文件：`docs/issue-resolution-log.md`、`frontend/e2e/agent-console.spec.ts`
+- 验证命令：`cd frontend; npm run e2e -- --project=desktop`、`cd frontend; npm run e2e -- --project=mobile`
+- 结果：PASS，desktop 与 mobile 的真实后端联调用例均通过。
+
+## 2026-08-12 - 前端历史消息晚返回覆盖正在发送的消息
+- 日期：2026-08-12
+- 现象：代码复核发现切换或新建会话后，如果历史消息请求尚未返回，用户立即发送消息，晚返回的空历史可能覆盖当前聊天区。
+- 根因：发送消息时没有让当前会话的历史加载请求失效；`load_messages` 仍可能在流式聊天开始后写入 reducer。
+- 修改文件：`docs/issue-resolution-log.md`、`frontend/src/components/AgentConsole.test.tsx`、`frontend/src/components/AgentConsole.tsx`
+- 验证命令：`cd frontend; npm test -- src/components/AgentConsole.test.tsx`
+- 结果：PASS，晚返回历史不再覆盖正在发送的用户消息和助手流式回答。
+
+## 2026-08-12 - 前端 E2E 新建会话后过早读取选中 ID
+- 日期：2026-08-12
+- 现象：重新执行 `cd frontend; npm run e2e -- --project=desktop` 时，“切换会话恢复历史并支持删除”偶发失败；错误上下文显示页面最终已切到第二个会话并展示 `3 + 4 = 7`，但测试记录的 `secondSessionId` 仍是旧会话短 ID。
+- 根因：测试点击“新建会话”后立即读取 `.session-row.selected strong`，没有等待 React 完成选中状态更新，导致捕获到旧选中值。
+- 修改文件：`docs/issue-resolution-log.md`、`frontend/e2e/agent-console.spec.ts`
+- 验证命令：`cd frontend; npm run e2e -- --project=desktop`、`cd frontend; npm run e2e -- --project=mobile`
+- 结果：PASS，desktop 与 mobile 的真实后端联调用例均通过。
+
+## 2026-08-12 - 前端删除未选中会话打断当前历史加载
+- 日期：2026-08-12
+- 现象：代码复核发现删除未选中的会话时，当前选中会话正在进行的历史消息请求会被无差别标记为过期，可能导致当前聊天区停留在空状态。
+- 根因：`handleDeleteSession()` 在删除任意会话时都递增 `messageRequestIdRef`，而不是只在删除当前选中会话时让历史加载失效。
+- 修改文件：`docs/issue-resolution-log.md`、`frontend/src/components/AgentConsole.test.tsx`、`frontend/src/components/AgentConsole.tsx`
+- 验证命令：`cd frontend; npm test -- src/components/AgentConsole.test.tsx`
+- 结果：PASS，删除未选中会话不再打断当前选中会话的历史加载。
+
+## 2026-08-12 - 前端不同会话流式生成期间消息串流
+- 日期：2026-08-12
+- 现象：用户反馈在 A 会话流式生成时切到 B 会话，A 会话的 token 会临时显示到 B 会话；生成结束后切换回来又不互相影响。
+- 根因：前端只有一份全局 `chatState`，`streamChat()` 返回的事件无论来自哪个会话都会写入当前聊天 reducer；同时切回原会话时可能重新拉取空历史并覆盖本地已完成的流式结果。
+- 修改文件：`docs/issue-resolution-log.md`、`frontend/src/components/AgentConsole.test.tsx`、`frontend/src/components/AgentConsole.tsx`、`frontend/e2e/agent-console.spec.ts`
+- 验证命令：`cd frontend; npm test -- src/components/AgentConsole.test.tsx`、`cd frontend; npm test`、`cd frontend; npm run build`、`uv run pytest -m "not integration" -v`、`cd frontend; npm run e2e -- --project=desktop`、`cd frontend; npm run e2e -- --project=mobile`
+- 结果：PASS，聊天状态改为按 `session_id` 保存，流式事件写回发起请求的会话；已有本地状态的会话切回时不再用空历史覆盖；desktop 和 mobile E2E 均验证流式隔离。
+
+## 2026-08-12 - 前端快速切换导致未完成历史请求被空状态占坑
+- 日期：2026-08-12
+- 现象：代码复核发现，如果 A 会话历史加载尚未返回就切到 B，会让 A 留下一个空聊天状态；A 的旧请求晚返回后会被判过期，之后再切回 A 时前端误以为已有缓存，不再重新拉取历史。
+- 根因：历史加载请求发出时先 dispatch `reset_for_session`，导致 `chatStatesBySession[session_id]` 被创建为空状态；缓存判断只看该 key 是否存在，无法区分“加载完成”和“加载中占位”。
+- 修改文件：`docs/issue-resolution-log.md`、`frontend/src/components/AgentConsole.test.tsx`、`frontend/src/components/AgentConsole.tsx`
+- 验证命令：`cd frontend; npm test -- src/components/AgentConsole.test.tsx`
+- 结果：PASS，新增回归测试确认切离时不会创建空缓存占坑；历史加载只在真实返回消息后写入对应会话状态。
+
+## 2026-08-12 - 前端历史请求全局失效导致跨会话竞态
+- 日期：2026-08-12
+- 现象：代码审阅发现历史消息请求仍共用一个全局版本号；当前 B 会话历史未返回时，A 会话的流式 token 写入或其他会话状态变化可能让 B 的请求过期；用户切换时旧会话也会短暂保留，删除会话 pending 期间切到被删会话后可能留下已删除选中状态。
+- 根因：历史请求有效性没有按 `user_id + session_id` 隔离；用户 ID 输入变化时只等待异步会话列表刷新，没有同步清空本地旧会话；删除成功后判断选中会话使用了旧闭包状态。
+- 修改文件：`docs/issue-resolution-log.md`、`frontend/src/components/AgentConsole.test.tsx`、`frontend/src/components/AgentConsole.tsx`
+- 验证命令：`cd frontend; npm test -- src/components/AgentConsole.test.tsx -t "切换用户时立即清空旧会话并不读取旧会话消息"`、`cd frontend; npm test -- src/components/AgentConsole.test.tsx -t "切换离开后晚返回的历史消息会按原会话缓存"`、`cd frontend; npm test -- src/components/AgentConsole.test.tsx -t "其他会话流式更新不会重启当前会话的历史加载"`、`cd frontend; npm test -- src/components/AgentConsole.test.tsx -t "删除请求期间切到被删会话时删除完成后切回剩余会话"`
+- 结果：PASS，历史请求版本改为按 `user_id + session_id` 管理；同一用户旧会话历史晚返回可写回对应缓存，换用户后旧请求不会落地；删除完成后使用最新会话列表和最新选中状态切换。
+
+## 2026-08-12 - 后端消息 role 响应契约过宽
+- 日期：2026-08-12
+- 现象：代码审阅发现 `MessageResponse.role` 后端 schema 是裸 `str`，但前端类型假设只会收到 `user` 或 `assistant`。
+- 根因：Pydantic 响应模型没有把消息角色声明为枚举值，OpenAPI 无法表达前后端契约。
+- 修改文件：`docs/issue-resolution-log.md`、`tests/api/test_health_sessions_tools.py`、`src/api/schemas.py`
+- 验证命令：`uv run pytest tests/api/test_health_sessions_tools.py::test_message_response_openapi_limits_role_values -v`
+- 结果：PASS，`MessageResponse.role` 改为 `Literal["user", "assistant"]`，OpenAPI schema 已输出枚举约束。
+
+## 2026-08-12 - 前端创建/删除会话 pending 期间切换用户可能污染界面
+- 日期：2026-08-12
+- 现象：代码复核发现创建会话请求尚未返回时切换用户，旧用户的新会话返回后仍可能追加到当前用户界面；创建/删除失败时，旧用户错误也可能显示到新用户界面。
+- 根因：创建/删除会话的异步回调只依赖发起时闭包中的 `userId`，没有在返回后确认当前活跃用户仍是原用户；失败分支也缺少同样的隔离判断。
+- 修改文件：`docs/issue-resolution-log.md`、`frontend/src/components/AgentConsole.test.tsx`、`frontend/src/components/AgentConsole.tsx`
+- 验证命令：`cd frontend; npm test -- src/components/AgentConsole.test.tsx -t "创建会话未返回时切换用户会忽略旧用户新会话"`、`cd frontend; npm test -- src/components/AgentConsole.test.tsx -t "删除会话未返回时切换用户会忽略旧用户删除结果"`、`cd frontend; npm test -- src/components/AgentConsole.test.tsx -t "创建会话失败前切换用户不显示旧用户错误"`、`cd frontend; npm test -- src/components/AgentConsole.test.tsx -t "删除会话失败前切换用户不显示旧用户错误"`
+- 结果：PASS，创建/删除会话成功或失败返回后先校验当前活跃用户，不匹配时丢弃旧用户异步结果和错误提示。

@@ -31,7 +31,20 @@ export async function requestJson<T>(
     throw new Error(detail || `请求失败，状态码 ${response.status}。`);
   }
 
-  return response.json() as Promise<T>;
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  const contentType = response.headers.get("Content-Type") ?? "";
+  if (!contentType.toLowerCase().includes("application/json")) {
+    throw new Error("后端返回内容不是 JSON，请确认前端代理或 API 地址。");
+  }
+
+  try {
+    return (await response.json()) as T;
+  } catch {
+    throw new Error("后端返回内容不是 JSON，请确认前端代理或 API 地址。");
+  }
 }
 
 async function readErrorDetail(response: Response): Promise<string> {

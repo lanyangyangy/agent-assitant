@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { BackendClient } from "../api/backendClient";
 import type { HealthResponse, SessionRecord, ToolSchema } from "../api/types";
 import { chatReducer, createInitialChatState } from "../state/chatReducer";
+import type { ChatAction, ChatState } from "../state/types";
 import { ChatPanel } from "./ChatPanel";
 import { ErrorBanner } from "./ErrorBanner";
 import { EventPanel } from "./EventPanel";
@@ -24,8 +25,34 @@ export function AgentConsole({ api, apiBaseUrl, defaultUserId }: AgentConsolePro
   const [inputValue, setInputValue] = useState("");
   const [isLoadingSessions, setIsLoadingSessions] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
-  const [chatState, dispatch] = useReducer(chatReducer, undefined, createInitialChatState);
+  const [chatStatesBySession, setChatStatesBySession] = useState<Record<string, ChatState>>({});
+  const sessionsRef = useRef<SessionRecord[]>([]);
   const sessionRequestIdRef = useRef(0);
+  const activeUserIdRef = useRef(defaultUserId.trim());
+  const historyRequestVersionsRef = useRef<Record<string, number>>({});
+  const selectedChatState = selectedSessionId ? chatStatesBySession[selectedSessionId] : undefined;
+  const chatState = selectedSessionId
+    ? (selectedChatState ?? createInitialChatState())
+    : createInitialChatState();
+
+  const dispatchToSession = useCallback((sessionId: string, action: ChatAction) => {
+    setChatStatesBySession((current) => ({
+      ...current,
+      [sessionId]: chatReducer(current[sessionId] ?? createInitialChatState(), action),
+    }));
+  }, []);
+
+  const nextHistoryRequestVersion = useCallback((nextUserId: string, sessionId: string) => {
+    const requestKey = createHistoryRequestKey(nextUserId, sessionId);
+    const nextVersion = (historyRequestVersionsRef.current[requestKey] ?? 0) + 1;
+    historyRequestVersionsRef.current[requestKey] = nextVersion;
+    return { requestKey, requestVersion: nextVersion };
+  }, []);
+
+  const invalidateHistoryRequest = useCallback((nextUserId: string, sessionId: string) => {
+    const requestKey = createHistoryRequestKey(nextUserId, sessionId);
+    historyRequestVersionsRef.current[requestKey] = (historyRequestVersionsRef.current[requestKey] ?? 0) + 1;
+  }, []);
 
   const refreshStatus = useCallback(async () => {
     try {
@@ -43,8 +70,11 @@ export function AgentConsole({ api, apiBaseUrl, defaultUserId }: AgentConsolePro
       const requestId = ++sessionRequestIdRef.current;
       const trimmedUserId = nextUserId.trim();
       if (!trimmedUserId) {
+        sessionsRef.current = [];
         setSessions([]);
         setSelectedSessionId(null);
+        setChatStatesBySession({});
+        historyRequestVersionsRef.current = {};
         setLocalError("请输入用户 ID。");
         return;
       }
@@ -55,9 +85,11 @@ export function AgentConsole({ api, apiBaseUrl, defaultUserId }: AgentConsolePro
         if (requestId !== sessionRequestIdRef.current) {
           return;
         }
+        sessionsRef.current = result.sessions;
         setSessions(result.sessions);
         setSelectedSessionId(result.sessions[0]?.session_id ?? null);
-        dispatch({ type: "reset_for_session" });
+        setChatStatesBySession({});
+        historyRequestVersionsRef.current = {};
         setLocalError(null);
       } catch (error) {
         if (requestId !== sessionRequestIdRef.current) {
@@ -81,6 +113,50 @@ export function AgentConsole({ api, apiBaseUrl, defaultUserId }: AgentConsolePro
     void loadSessions(userId);
   }, [loadSessions, userId]);
 
+  useEffect(() => {
+    const trimmedUserId = userId.trim();
+    if (!trimmedUserId || !selectedSessionId) {
+      return;
+    }
+    if (selectedChatState !== undefined) {
+      return;
+    }
+
+    const { requestKey, requestVersion } = nextHistoryRequestVersion(trimmedUserId, selectedSessionId);
+    api
+      .listMessages(trimmedUserId, selectedSessionId)
+      .then((result) => {
+        if (
+          activeUserIdRef.current === trimmedUserId &&
+          historyRequestVersionsRef.current[requestKey] === requestVersion
+        ) {
+          dispatchToSession(selectedSessionId, { type: "load_messages", messages: result.messages });
+          setLocalError(null);
+        }
+      })
+      .catch((error) => {
+        if (
+          activeUserIdRef.current === trimmedUserId &&
+          historyRequestVersionsRef.current[requestKey] === requestVersion
+        ) {
+          setLocalError(error instanceof Error ? error.message : "加载聊天记录失败。");
+        }
+      });
+  }, [api, dispatchToSession, nextHistoryRequestVersion, selectedChatState, selectedSessionId, userId]);
+
+  function handleUserIdChange(nextUserId: string) {
+    activeUserIdRef.current = nextUserId.trim();
+    sessionRequestIdRef.current += 1;
+    historyRequestVersionsRef.current = {};
+    setUserId(nextUserId);
+    sessionsRef.current = [];
+    setSessions([]);
+    setSelectedSessionId(null);
+    setChatStatesBySession({});
+    setInputValue("");
+    setLocalError(null);
+  }
+
   async function handleCreateSession() {
     const trimmedUserId = userId.trim();
     if (!trimmedUserId) {
@@ -91,36 +167,55 @@ export function AgentConsole({ api, apiBaseUrl, defaultUserId }: AgentConsolePro
     sessionRequestIdRef.current += 1;
     try {
       const session = await api.createSession(trimmedUserId);
-      setSessions((current) => [...current, session]);
+      if (activeUserIdRef.current !== trimmedUserId) {
+        return;
+      }
+      setSessions((current) => {
+        const nextSessions = [...current, session];
+        sessionsRef.current = nextSessions;
+        return nextSessions;
+      });
       setSelectedSessionId(session.session_id);
-      dispatch({ type: "reset_for_session" });
+      dispatchToSession(session.session_id, { type: "reset_for_session" });
       setLocalError(null);
     } catch (error) {
+      if (activeUserIdRef.current !== trimmedUserId) {
+        return;
+      }
       setLocalError(error instanceof Error ? error.message : "创建会话失败。");
     }
   }
 
   async function handleDeleteSession(sessionId: string) {
     sessionRequestIdRef.current += 1;
+    const trimmedUserId = userId.trim();
     try {
-      await api.deleteSession(userId.trim(), sessionId);
-      setSessions((current) => {
-        const nextSessions = current.filter((session) => session.session_id !== sessionId);
-        if (selectedSessionId === sessionId) {
-          setSelectedSessionId(nextSessions[0]?.session_id ?? null);
-          dispatch({ type: "reset_for_session" });
-        }
-        return nextSessions;
+      await api.deleteSession(trimmedUserId, sessionId);
+      if (activeUserIdRef.current !== trimmedUserId) {
+        return;
+      }
+      invalidateHistoryRequest(trimmedUserId, sessionId);
+      const nextSessions = sessionsRef.current.filter((session) => session.session_id !== sessionId);
+      sessionsRef.current = nextSessions;
+      setSessions(nextSessions);
+      setSelectedSessionId((currentSelectedSessionId) =>
+        currentSelectedSessionId === sessionId ? (nextSessions[0]?.session_id ?? null) : currentSelectedSessionId,
+      );
+      setChatStatesBySession((current) => {
+        const { [sessionId]: _deletedSession, ...remaining } = current;
+        return remaining;
       });
       setLocalError(null);
     } catch {
+      if (activeUserIdRef.current !== trimmedUserId) {
+        return;
+      }
       setLocalError("删除会话失败，请刷新后重试。");
     }
   }
 
   function handleSelectSession(sessionId: string) {
     setSelectedSessionId(sessionId);
-    dispatch({ type: "reset_for_session" });
   }
 
   async function handleSubmitMessage() {
@@ -138,20 +233,22 @@ export function AgentConsole({ api, apiBaseUrl, defaultUserId }: AgentConsolePro
       return;
     }
 
-    dispatch({ type: "user_message", content: trimmedMessage });
-    dispatch({ type: "start_stream" });
+    const requestSessionId = selectedSessionId;
+    invalidateHistoryRequest(trimmedUserId, requestSessionId);
+    dispatchToSession(requestSessionId, { type: "user_message", content: trimmedMessage });
+    dispatchToSession(requestSessionId, { type: "start_stream" });
     setInputValue("");
     setLocalError(null);
 
     try {
       for await (const event of api.streamChat(trimmedUserId, {
-        session_id: selectedSessionId,
+        session_id: requestSessionId,
         message: trimmedMessage,
       })) {
-        dispatch({ type: "stream_event", event });
+        dispatchToSession(requestSessionId, { type: "stream_event", event });
       }
     } catch (error) {
-      dispatch({
+      dispatchToSession(requestSessionId, {
         type: "stream_event",
         event: {
           event: "error",
@@ -170,7 +267,7 @@ export function AgentConsole({ api, apiBaseUrl, defaultUserId }: AgentConsolePro
         modelLabel={health?.model_configured ? "模型已配置" : "模型未配置"}
         sqliteLabel={health?.sqlite_available ? "SQLite 可用" : "SQLite 异常"}
         searchLabel={health?.search_available ? "搜索可用" : "搜索不可用"}
-        onUserIdChange={setUserId}
+        onUserIdChange={handleUserIdChange}
         onRefresh={refreshStatus}
       />
       <ErrorBanner message={localError ?? chatState.error} />
@@ -195,4 +292,8 @@ export function AgentConsole({ api, apiBaseUrl, defaultUserId }: AgentConsolePro
       </div>
     </main>
   );
+}
+
+function createHistoryRequestKey(userId: string, sessionId: string): string {
+  return `${userId}:${sessionId}`;
 }

@@ -15,6 +15,15 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
     case "reset_for_session":
       return createInitialChatState();
+    case "load_messages":
+      return {
+        ...createInitialChatState(),
+        messages: action.messages.map((message) => ({
+          id: `history-${message.id}`,
+          role: message.role,
+          content: message.content,
+        })),
+      };
     case "user_message":
       return {
         ...state,

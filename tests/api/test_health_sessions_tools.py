@@ -49,6 +49,36 @@ async def test_sessions_are_created_listed_and_deleted_per_user(client):
     assert empty_after_delete.json() == {"sessions": []}
 
 
+async def test_session_messages_are_listed_per_user_after_chat(client):
+    created = await client.post("/sessions", headers={"X-User-Id": "alice"})
+    session_id = created.json()["session_id"]
+
+    streamed = await client.post(
+        "/chat/stream",
+        headers={"X-User-Id": "alice"},
+        json={"session_id": session_id, "message": "请计算 6*7"},
+    )
+    assert streamed.status_code == 200
+
+    listed = await client.get(
+        f"/sessions/{session_id}/messages",
+        headers={"X-User-Id": "alice"},
+    )
+
+    assert listed.status_code == 200
+    messages = listed.json()["messages"]
+    assert [message["role"] for message in messages] == ["user", "assistant"]
+    assert messages[0]["content"] == "请计算 6*7"
+    assert "42" in messages[1]["content"]
+
+    bob_listed = await client.get(
+        f"/sessions/{session_id}/messages",
+        headers={"X-User-Id": "bob"},
+    )
+    assert bob_listed.status_code == 404
+    assert "会话不存在" in bob_listed.json()["detail"]
+
+
 async def test_missing_user_id_is_required_for_all_user_scoped_endpoints(client):
     get_sessions = await client.get("/sessions")
     assert get_sessions.status_code == 400
@@ -98,6 +128,14 @@ async def test_tool_invoke_openapi_uses_response_model(client):
     assert response.status_code == 200
     schema = response.json()["paths"]["/tools/{tool_name}/invoke"]["post"]["responses"]["200"]
     assert schema["content"]["application/json"]["schema"]["$ref"].endswith("/ToolInvokeResponse")
+
+
+async def test_message_response_openapi_limits_role_values(client):
+    response = await client.get("/openapi.json")
+
+    assert response.status_code == 200
+    role_schema = response.json()["components"]["schemas"]["MessageResponse"]["properties"]["role"]
+    assert role_schema["enum"] == ["user", "assistant"]
 
 
 async def test_search_tool_returns_chinese_unavailable_when_tavily_key_missing(client):
