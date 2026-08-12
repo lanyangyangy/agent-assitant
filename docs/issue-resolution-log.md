@@ -171,3 +171,43 @@
 - 修改文件：`docs/issue-resolution-log.md`、`frontend/src/components/AgentConsole.test.tsx`、`frontend/src/components/AgentConsole.tsx`
 - 验证命令：`cd frontend; npm test -- src/components/AgentConsole.test.tsx`
 - 结果：已新增旧请求晚返回回归测试，并用递增请求号忽略过期会话列表响应；组件测试 5 项通过。
+
+## 2026-08-12 - 前端 E2E 缺少 Playwright Chromium
+- 日期：2026-08-12
+- 现象：执行 `cd frontend; npm run e2e -- --project=desktop` 时，2 个测试都在浏览器启动前失败，提示 `chrome-headless-shell.exe` 不存在。
+- 根因：本机 Playwright 依赖已安装，但对应版本的 Chromium 浏览器二进制尚未下载。
+- 修改文件：`docs/issue-resolution-log.md`、`frontend/playwright.config.ts`
+- 验证命令：`cd frontend; npm run e2e -- --project=desktop`
+- 结果：`npx playwright install chromium` 超过 244 秒仍未完成，已终止残留下载进程；改用本机已安装的 Microsoft Edge 通道执行 Playwright 验证，后续 desktop E2E 通过。
+
+## 2026-08-12 - 前端 E2E Vite 代理未命中后端
+- 日期：2026-08-12
+- 现象：改用 Edge 后执行 `cd frontend; npm run e2e -- --project=desktop`，页面能打开但健康状态保持 `后端未知`，局部错误显示 HTML JSON 解析失败或 404。
+- 根因：E2E 启动的 Vite dev server 没有把 `/api` 请求代理到 FastAPI，浏览器请求 `/api/health` 时拿到前端 HTML 或 Vite 404。
+- 修改文件：`docs/issue-resolution-log.md`、`frontend/playwright.config.ts`
+- 验证命令：`cd frontend; npm run e2e -- --project=desktop`、`cd frontend; npm run e2e -- --project=mobile`
+- 结果：已在 E2E 前端启动命令中显式指定 `--config vite.config.ts --strictPort`；重新执行后健康状态、会话创建和用户隔离路径可访问后端。
+
+## 2026-08-12 - 前端 E2E 最终回答断言过窄
+- 日期：2026-08-12
+- 现象：`cd frontend; npm run e2e -- --project=desktop` 中计算器联调已显示 `tool_call`、`tool_result` 和 `437`，但断言 `/计算结果是 437/` 失败。
+- 根因：真实后端在模型配置可用时返回更完整的解释文本，例如 `19 × 23 = 437。`，并不固定使用本地 fallback 文案 `计算结果是 437。`。
+- 修改文件：`docs/issue-resolution-log.md`、`frontend/e2e/agent-console.spec.ts`
+- 验证命令：`cd frontend; npm run e2e -- --project=desktop`
+- 结果：已改为断言核心事实 `19 × 23 = 437`；desktop E2E 2 项通过。
+
+## 2026-08-12 - 前端 E2E 并行验证争用端口与固定用户残留
+- 日期：2026-08-12
+- 现象：同时执行 desktop 和 mobile E2E 时，desktop webServer 因 8002 端口已被占用失败；mobile 用户隔离测试使用固定 `bob-e2e`，发现该用户已有历史会话，导致 `暂无会话` 断言失败。
+- 根因：Playwright webServer 不能被两条独立 `npm run e2e` 命令并行争用同一端口；同时真实后端使用持久 SQLite 数据，固定测试用户会跨运行残留状态。
+- 修改文件：`docs/issue-resolution-log.md`、`frontend/e2e/agent-console.spec.ts`
+- 验证命令：按顺序执行 `cd frontend; npm run e2e -- --project=desktop` 与 `cd frontend; npm run e2e -- --project=mobile`
+- 结果：已改为每次运行生成唯一 E2E 用户 ID；desktop 和 mobile E2E 各 2 项通过。
+
+## 2026-08-12 - Vitest 误收集 Playwright E2E 文件
+- 日期：2026-08-12
+- 现象：执行 `cd frontend; npm test` 时，Vitest 收集了 `e2e/agent-console.spec.ts`，并报错 `Playwright Test did not expect test() to be called here`。
+- 根因：Vitest 默认会匹配 `**/*.spec.ts`，新增 Playwright E2E 后没有在 Vitest 配置中排除 `e2e/**`。
+- 修改文件：`docs/issue-resolution-log.md`、`frontend/vite.config.ts`
+- 验证命令：`cd frontend; npm test`
+- 结果：已在 Vitest 配置中排除 `e2e/**`；`npm test` 5 个文件、15 项测试通过。
