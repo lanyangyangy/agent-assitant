@@ -307,3 +307,11 @@
 - 修改文件：`docs/issue-resolution-log.md`、`tests/unit/agents/test_react_agent.py`、`src/agents/react_agent.py`
 - 验证命令：`uv run pytest tests/unit/agents/test_react_agent.py::test_react_agent_executes_calculator_tool_and_saves_streamed_answer -v`
 - 结果：PASS，`message_end` 改为输出 `history_messages` 和 `selected_memory_context`，不再输出容易误导的 `selected_context`。
+
+## 2026-08-12 - 中文长期记忆未召回用户原始事实
+- 日期：2026-08-12
+- 现象：用户此前说过“我中午吃了一碗蛋炒饭”，后续询问“你还记得我中午吃了什么吗”时，`memory_saved=true` 但 `selected_memory_context=0`，助手回答没有相关记录。
+- 根因：记忆检索的 FTS 只索引助手回复 `content`，没有索引 `metadata_json.user_message`；中文长句查询按整句词元匹配，难以命中已有事实；同时后续“我不记得/无法知道”的错误回答也会进入记忆并可能排在事实记忆前面。
+- 修改文件：`docs/issue-resolution-log.md`、`tests/unit/core/test_memory.py`、`tests/unit/agents/test_react_agent.py`、`src/core/memory.py`、`src/agents/react_agent.py`
+- 验证命令：`uv run pytest tests/unit/core/test_memory.py::test_chinese_memory_search_matches_user_message_metadata -v`、`uv run pytest tests/unit/core/test_memory.py::test_chinese_recall_prefers_user_fact_over_later_uncertain_answers -v`、`uv run pytest tests/unit/core/test_memory.py -v`、`uv run pytest tests/unit/agents/test_react_agent.py -v`
+- 结果：PASS，记忆 FTS 同时索引助手回复和用户原话；中文长句拆为 trigram 召回；回忆类问题优先返回用户事实陈述，并在 Agent 上下文中显式展示“用户消息/助手回复”。

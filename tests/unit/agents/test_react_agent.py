@@ -68,10 +68,10 @@ class FakeMemoryStore:
         self.records = [
             SimpleNamespace(
                 id=7,
-                content="用户喜欢中文回答",
+                content="好的，我会使用中文回答。",
                 created_at="2026-08-11T00:00:00+00:00",
                 score=0.9,
-                metadata={"kind": "preference"},
+                metadata={"kind": "preference", "user_message": "我偏好中文回答"},
             )
         ]
 
@@ -240,6 +240,8 @@ async def test_react_agent_executes_calculator_tool_and_saves_streamed_answer():
     assert registry.invocations == [("calculator", {"expression": "2+2"})]
     assert isinstance(builder.calls[0]["memory_packets"][0], ContextPacket)
     assert builder.calls[0]["memory_packets"][0].metadata["memory_id"] == 7
+    assert "用户消息：我偏好中文回答" in builder.calls[0]["memory_packets"][0].content
+    assert "助手回复：好的，我会使用中文回答。" in builder.calls[0]["memory_packets"][0].content
     tool_messages = [message for message in qwen.stream_calls[0] if message["role"] == "tool"]
     assert set(tool_messages[0]) == {"role", "tool_call_id", "content"}
     assert json.loads(tool_messages[0]["content"])["data"] == {"result": 4}

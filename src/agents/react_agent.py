@@ -297,11 +297,21 @@ class ReactAgent:
             metadata.setdefault("memory_id", memory_id)
 
         return ContextPacket(
-            content=getattr(record, "content", ""),
+            content=ReactAgent._format_memory_content(getattr(record, "content", ""), metadata),
             timestamp=getattr(record, "created_at", ""),
             relevance_score=float(getattr(record, "score", 0.0)),
             metadata=metadata,
         )
+
+    @staticmethod
+    def _format_memory_content(content: str, metadata: dict[str, Any]) -> str:
+        user_message = metadata.get("user_message")
+        lines = []
+        if isinstance(user_message, str) and user_message.strip():
+            lines.append(f"用户消息：{user_message.strip()}")
+        if content.strip():
+            lines.append(f"助手回复：{content.strip()}")
+        return "\n".join(lines)
 
     @staticmethod
     def _parse_arguments(raw_arguments: Any) -> tuple[dict[str, Any], str | None]:

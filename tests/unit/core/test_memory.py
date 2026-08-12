@@ -121,6 +121,50 @@ async def test_chinese_memory_search_matches_substring_without_spaces(tmp_path: 
 
 
 @pytest.mark.asyncio
+async def test_chinese_memory_search_matches_user_message_metadata(tmp_path: Path):
+    memory = SQLiteMemoryStore(tmp_path / "agent.sqlite3")
+    await memory.initialize()
+    await memory.add(
+        "alice",
+        "s1",
+        "听起来很香！蛋炒饭简单又美味。",
+        {"source": "assistant", "user_message": "我中午吃了一碗蛋炒饭"},
+    )
+
+    hits = await memory.search("alice", "s1", "你还记得我中午吃了什么吗", limit=5)
+
+    assert [hit.content for hit in hits] == ["听起来很香！蛋炒饭简单又美味。"]
+
+
+@pytest.mark.asyncio
+async def test_chinese_recall_prefers_user_fact_over_later_uncertain_answers(tmp_path: Path):
+    memory = SQLiteMemoryStore(tmp_path / "agent.sqlite3")
+    await memory.initialize()
+    await memory.add(
+        "alice",
+        "s1",
+        "听起来很香！蛋炒饭简单又美味。",
+        {"source": "assistant", "user_message": "我中午吃了一碗蛋炒饭"},
+    )
+    await memory.add(
+        "alice",
+        "s1",
+        "不，我不记得你中午吃了什么。",
+        {"source": "assistant", "user_message": "你还记得我中午吃了什么吗"},
+    )
+    await memory.add(
+        "alice",
+        "s1",
+        "我无法知道你中午吃了什么。",
+        {"source": "assistant", "user_message": "我中午吃了什么"},
+    )
+
+    hits = await memory.search("alice", "s1", "你还记得我中午吃了什么吗", limit=3)
+
+    assert hits[0].metadata["user_message"] == "我中午吃了一碗蛋炒饭"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("limit", [0, -1])
 async def test_non_positive_limit_returns_empty_list(tmp_path: Path, limit: int):
     memory = SQLiteMemoryStore(tmp_path / "agent.sqlite3")
