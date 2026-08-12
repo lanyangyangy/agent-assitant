@@ -83,3 +83,46 @@ curl -N -X POST http://127.0.0.1:8000/chat/stream \
 
 响应应包含 `message_start`、`tool_call`、`tool_result`、`token` 和 `message_end`
 事件。用其他 `X-User-Id` 调用 `GET /sessions` 时，不应看到 Alice 的会话。
+
+## 前端控制台
+
+前端位于 `frontend/`，用于验证 Agent 能识别工具、调用工具，并把工具结果整合进流式回答。
+
+安装依赖：
+
+```bash
+cd frontend
+npm install
+```
+
+启动后端到前端默认代理端口：
+
+```bash
+uv run uvicorn src.main:app --host 127.0.0.1 --port 8002
+```
+
+启动前端：
+
+```bash
+cd frontend
+$env:VITE_BACKEND_TARGET="http://127.0.0.1:8002"
+npm run dev -- --port 5173
+```
+
+访问：
+
+```text
+http://127.0.0.1:5173
+```
+
+前端测试：
+
+```bash
+cd frontend
+npm test
+npm run build
+npm run e2e -- --project=desktop
+npm run e2e -- --project=mobile
+```
+
+E2E 会自动启动或复用 `127.0.0.1:8002` 后端和 `127.0.0.1:5173` 前端。当前配置优先使用本机 Microsoft Edge 通道运行 Playwright；如果机器没有 Edge，请先执行 `npx playwright install chromium`，再把 `frontend/playwright.config.ts` 的 `channel` 设置调整为 Chromium 默认配置。
