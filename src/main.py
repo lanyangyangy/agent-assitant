@@ -22,6 +22,7 @@ from src.core.trace_logger import TraceLogger
 from src.tools.base import BaseTool, ToolParameter
 from src.tools.calculator import CalculatorTool
 from src.tools.errors import ToolInputError
+from src.tools.time_tool import CurrentTimeTool
 from src.tools.registry import ToolRegistry
 from src.tools.search import TavilySearchTool
 from src.tools.weather import OpenMeteoWeatherTool
@@ -89,6 +90,7 @@ def _build_tool_registry(settings: Settings) -> ToolRegistry:
         failure_threshold=settings.circuit_breaker_failure_threshold,
     )
     registry.register(CalculatorTool())
+    registry.register(CurrentTimeTool())
     registry.register(_build_search_tool(settings))
     registry.register(OpenMeteoWeatherTool())
     return registry
@@ -171,6 +173,31 @@ class _LocalEchoClient:
         tools: Sequence[dict[str, Any]] | None = None,
         tool_choice: str | dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        weather_call = self._weather_tool_call(messages)
+        if weather_call is not None:
+            return weather_call
+
+        time_query = self._time_request(messages)
+        if time_query is not None:
+            return {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "local-time-1",
+                        "type": "function",
+                        "function": {
+                            "name": "get_time",
+                            "arguments": json.dumps(
+                                {"timezone": time_query},
+                                ensure_ascii=False,
+                                separators=(",", ":"),
+                            ),
+                        },
+                    }
+                ],
+            }
+
         expression = self._calculator_expression(messages)
         if expression is not None:
             return {
@@ -244,6 +271,117 @@ class _LocalEchoClient:
             return None
         return max(candidates, key=lambda value: (len(value), cls._operator_count(value)))
 
+    @staticmethod
+    def _time_request(messages: Sequence[dict[str, Any]]) -> str | None:
+        if any(message.get("role") == "tool" for message in messages):
+            return None
+        user_message = _LocalEchoClient._last_user_message(messages)
+        if not user_message:
+            return None
+        if any(keyword in user_message for keyword in ("时间", "几点", "现在几点", "现在时间", "天气")):
+            return "Asia/Shanghai"
+        return None
+
+    @classmethod
+    def _weather_tool_call(cls, messages: Sequence[dict[str, Any]]) -> dict[str, Any] | None:
+        user_message = _LocalEchoClient._last_user_message(messages)
+        if "天气" not in user_message:
+            return None
+        if cls._has_tool_result(messages, "get_weather"):
+            return None
+
+        time_result = cls._latest_tool_data(messages, "get_time")
+        if time_result is None:
+            return None
+
+        location = cls._extract_weather_location(user_message)
+        arguments = {
+            "location": location,
+            "timezone": str(time_result.get("timezone") or "Asia/Shanghai"),
+        }
+        relative_days = cls._relative_days_ahead(user_message)
+        if relative_days is not None:
+            target_date = cls._target_date_from_user_message(time_result, relative_days)
+            if not target_date:
+                return None
+            arguments["target_date"] = target_date
+        return {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "local-weather-1",
+                    "type": "function",
+                    "function": {
+                        "name": "get_weather",
+                        "arguments": json.dumps(
+                            arguments,
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                        ),
+                    },
+                }
+            ],
+        }
+
+    @staticmethod
+    def _extract_weather_location(user_message: str) -> str:
+        for marker in ("的天气", "天气"):
+            if marker in user_message:
+                candidate = user_message.split(marker, 1)[0]
+                for prefix in ("今天", "明天", "后天", "大后天"):
+                    candidate = candidate.replace(prefix, "")
+                candidate = candidate.strip(" ，,。？?怎么样")
+                if candidate:
+                    return candidate
+        return "合肥"
+
+    @staticmethod
+    def _relative_days_ahead(user_message: str) -> int | None:
+        if "大后天" in user_message:
+            return 3
+        if "后天" in user_message:
+            return 2
+        if "明天" in user_message:
+            return 1
+        return None
+
+    @staticmethod
+    def _target_date_from_user_message(time_result: dict[str, Any], days_ahead: int) -> str:
+        base_date = str(time_result.get("date") or "")
+        if not base_date:
+            return ""
+        from datetime import date, timedelta
+
+        return (date.fromisoformat(base_date) + timedelta(days=days_ahead)).isoformat()
+
+    @classmethod
+    def _has_tool_result(cls, messages: Sequence[dict[str, Any]], tool_name: str) -> bool:
+        return cls._latest_tool_data(messages, tool_name) is not None
+
+    @staticmethod
+    def _latest_tool_data(messages: Sequence[dict[str, Any]], tool_name: str) -> dict[str, Any] | None:
+        for message in reversed(messages):
+            if message.get("role") != "tool":
+                continue
+            content = message.get("content")
+            if not isinstance(content, str):
+                continue
+            try:
+                payload = json.loads(content)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(payload, dict) or payload.get("success") is not True:
+                continue
+            data = payload.get("data")
+            if not isinstance(data, dict):
+                continue
+            if tool_name == "get_time" and {"date", "timezone"}.issubset(data):
+                return data
+            if tool_name == "get_weather" and ("forecast" in data or "current" in data):
+                return data
+        return None
+
     @classmethod
     def _best_balanced_fragment(cls, raw_fragment: str) -> str | None:
         fragment = raw_fragment.strip()
@@ -300,6 +438,26 @@ class _LocalEchoClient:
                 continue
 
             result = payload.get("data") if isinstance(payload, dict) else None
+            if isinstance(result, dict) and "forecast" in result:
+                forecast = result["forecast"]
+                location = result.get("location", {})
+                return (
+                    f"{location.get('name', '该地点')} {forecast.get('date')} 的天气："
+                    f"天气代码 {forecast.get('weather_code')}，"
+                    f"最高 {forecast.get('temperature_max')}{forecast.get('temperature_unit') or ''}，"
+                    f"最低 {forecast.get('temperature_min')}{forecast.get('temperature_unit') or ''}，"
+                    f"降水概率 {forecast.get('precipitation_probability_max')}"
+                    f"{forecast.get('precipitation_probability_unit') or ''}。"
+                )
+            if isinstance(result, dict) and "current" in result:
+                current = result["current"]
+                location = result.get("location", {})
+                return (
+                    f"{location.get('name', '该地点')} 当前天气："
+                    f"{current.get('temperature')}{current.get('temperature_unit') or ''}，"
+                    f"湿度 {current.get('humidity')}{current.get('humidity_unit') or ''}，"
+                    f"天气代码 {current.get('weather_code')}。"
+                )
             if isinstance(result, dict) and "result" in result:
                 return f"计算结果是 {result['result']}。"
         return None

@@ -104,12 +104,15 @@ async def test_tools_are_listed_and_calculator_can_be_invoked(client):
     assert listed.status_code == 200
     tools = listed.json()
     names = {tool["name"] for tool in tools}
-    assert {"calculator", "search", "get_weather"}.issubset(names)
+    assert {"calculator", "search", "get_weather", "get_time"}.issubset(names)
     assert all(isinstance(tool["parameters"], list) for tool in tools)
 
     calculator = next(tool for tool in tools if tool["name"] == "calculator")
     assert calculator["description"]
     assert calculator["parameters"][0]["name"] == "expression"
+
+    time_tool = next(tool for tool in tools if tool["name"] == "get_time")
+    assert time_tool["parameters"][0]["name"] == "timezone"
 
     invoked = await client.post("/tools/calculator/invoke", json={"expression": "8*9"})
     assert invoked.status_code == 200

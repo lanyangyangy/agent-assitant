@@ -315,3 +315,10 @@
 - 修改文件：`docs/issue-resolution-log.md`、`tests/unit/core/test_memory.py`、`tests/unit/agents/test_react_agent.py`、`src/core/memory.py`、`src/agents/react_agent.py`
 - 验证命令：`uv run pytest tests/unit/core/test_memory.py::test_chinese_memory_search_matches_user_message_metadata -v`、`uv run pytest tests/unit/core/test_memory.py::test_chinese_recall_prefers_user_fact_over_later_uncertain_answers -v`、`uv run pytest tests/unit/core/test_memory.py -v`、`uv run pytest tests/unit/agents/test_react_agent.py -v`
 - 结果：PASS，记忆 FTS 同时索引助手回复和用户原话；中文长句拆为 trigram 召回；回忆类问题优先返回用户事实陈述，并在 Agent 上下文中显式展示“用户消息/助手回复”。
+## 2026-08-12 - 时间工具缺少 tzdata 兜底且天气工具混淆当前天气与日预报
+- 日期：2026-08-12
+- 现象：`get_time` 在本机未安装 `tzdata` 时无法解析 `Asia/Shanghai`；`get_weather` 在未传日期时也强制走日预报，导致旧接口回归失败；相对日期“后天”在北京时间场景下还会按 UTC 日期加天数，算错目标日。
+- 根因：时区解析只依赖 `ZoneInfo`，没有固定偏移兜底；天气工具把“当前天气”和“指定日期预报”合并到单一路径，且相对日期基准使用了 UTC 而不是本地时区。
+- 修改文件：`docs/issue-resolution-log.md`、`src/tools/time_tool.py`、`src/tools/weather.py`、`src/main.py`、`tests/unit/tools/test_search_weather.py`、`tests/api/test_chat_stream.py`、`tests/api/test_health_sessions_tools.py`
+- 验证命令：`uv run pytest tests/unit/tools/test_search_weather.py -q`、`uv run pytest tests/api/test_chat_stream.py tests/api/test_health_sessions_tools.py -q`、`uv run pytest tests/unit/agents/test_react_agent.py tests/unit/agents/test_qwen_client.py -q`、`uv run pytest -m "not integration" -v`
+- 结果：PASS，`get_time` 可在无 `tzdata` 环境下返回北京时间；`get_weather` 在无日期时仍返回 current，在 `target_date/days_ahead` 时返回 daily forecast；API 侧也验证了“后天合肥天气”会先调 `get_time` 再调 `get_weather`。

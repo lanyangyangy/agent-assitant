@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import importlib
 from typing import Any
 
@@ -64,6 +65,10 @@ def _search_module():
 
 def _weather_module():
     return importlib.import_module("src.tools.weather")
+
+
+def _time_module():
+    return importlib.import_module("src.tools.time_tool")
 
 
 def _registry_module():
@@ -267,6 +272,9 @@ async def test_open_meteo_weather_defaults_and_client_ownership(monkeypatch):
     assert [(p.name, p.required, p.default) for p in tool.parameters] == [
         ("location", True, None),
         ("unit", False, "celsius"),
+        ("target_date", False, None),
+        ("days_ahead", False, None),
+        ("timezone", False, "auto"),
     ]
 
     await tool.run({"location": "Shanghai"})
@@ -279,6 +287,146 @@ async def test_open_meteo_weather_defaults_and_client_ownership(monkeypatch):
     injected_tool = weather.OpenMeteoWeatherTool(http_client=injected_client)
     await injected_tool.aclose()
     assert injected_client.closed is False
+
+
+@pytest.mark.asyncio
+async def test_current_time_tool_returns_asia_shanghai_now_by_default():
+    time_tool = _time_module().CurrentTimeTool(
+        now_provider=lambda: datetime(2026, 8, 12, 4, 30, 0, tzinfo=UTC),
+    )
+
+    result = await time_tool.run({})
+
+    assert [(p.name, p.required, p.default) for p in time_tool.parameters] == [
+        ("timezone", False, "Asia/Shanghai"),
+    ]
+    assert result["timezone"] == "Asia/Shanghai"
+    assert result["utc_offset"] == "+08:00"
+    assert result["date"] == "2026-08-12"
+    assert result["datetime"] == "2026-08-12T12:30:00+08:00"
+
+
+@pytest.mark.asyncio
+async def test_open_meteo_weather_accepts_target_date_and_returns_daily_forecast():
+    client = FakeHttpClient(
+        get_payloads=[
+            {"results": [{"name": "Hefei", "latitude": 31.82, "longitude": 117.23}]},
+            {
+                "daily": {
+                    "time": ["2026-08-14"],
+                    "weather_code": [61],
+                    "temperature_2m_max": [33.5],
+                    "temperature_2m_min": [25.0],
+                    "precipitation_probability_max": [70],
+                    "wind_speed_10m_max": [18.4],
+                },
+                "daily_units": {
+                    "temperature_2m_max": "°C",
+                    "temperature_2m_min": "°C",
+                    "precipitation_probability_max": "%",
+                    "wind_speed_10m_max": "km/h",
+                },
+            },
+        ]
+    )
+    tool = _weather_module().OpenMeteoWeatherTool(http_client=client)
+
+    result = await tool.run({"location": "合肥", "target_date": "2026-08-14"})
+
+    forecast_params = client.get_calls[1]["params"]
+    assert forecast_params["daily"] == (
+        "weather_code,temperature_2m_max,temperature_2m_min,"
+        "precipitation_probability_max,wind_speed_10m_max"
+    )
+    assert forecast_params["start_date"] == "2026-08-14"
+    assert forecast_params["end_date"] == "2026-08-14"
+    assert forecast_params["timezone"] == "auto"
+    assert result == {
+        "location": {
+            "name": "Hefei",
+            "lat": 31.82,
+            "lon": 117.23,
+        },
+        "forecast": {
+            "date": "2026-08-14",
+            "weather_code": 61,
+            "temperature_max": 33.5,
+            "temperature_min": 25.0,
+            "temperature_unit": "°C",
+            "precipitation_probability_max": 70,
+            "precipitation_probability_unit": "%",
+            "wind_speed_max": 18.4,
+            "wind_speed_unit": "km/h",
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_open_meteo_weather_converts_days_ahead_to_target_date():
+    client = FakeHttpClient(
+        get_payloads=[
+            {"results": [{"name": "Hefei", "latitude": 31.82, "longitude": 117.23}]},
+            {
+                "daily": {
+                    "time": ["2026-08-14"],
+                    "weather_code": [3],
+                    "temperature_2m_max": [34.0],
+                    "temperature_2m_min": [26.0],
+                    "precipitation_probability_max": [20],
+                    "wind_speed_10m_max": [10.0],
+                },
+                "daily_units": {
+                    "temperature_2m_max": "°C",
+                    "temperature_2m_min": "°C",
+                    "precipitation_probability_max": "%",
+                    "wind_speed_10m_max": "km/h",
+                },
+            },
+        ]
+    )
+    tool = _weather_module().OpenMeteoWeatherTool(
+        http_client=client,
+        now_provider=lambda: datetime(2026, 8, 12, 8, 0, 0, tzinfo=UTC),
+    )
+
+    result = await tool.run({"location": "合肥", "days_ahead": 2, "timezone": "Asia/Shanghai"})
+
+    assert client.get_calls[1]["params"]["start_date"] == "2026-08-14"
+    assert result["forecast"]["date"] == "2026-08-14"
+
+
+@pytest.mark.asyncio
+async def test_open_meteo_weather_converts_days_ahead_from_local_timezone_date():
+    client = FakeHttpClient(
+        get_payloads=[
+            {"results": [{"name": "Hefei", "latitude": 31.82, "longitude": 117.23}]},
+            {
+                "daily": {
+                    "time": ["2026-08-14"],
+                    "weather_code": [3],
+                    "temperature_2m_max": [34.0],
+                    "temperature_2m_min": [26.0],
+                    "precipitation_probability_max": [20],
+                    "wind_speed_10m_max": [10.0],
+                },
+                "daily_units": {
+                    "temperature_2m_max": "°C",
+                    "temperature_2m_min": "°C",
+                    "precipitation_probability_max": "%",
+                    "wind_speed_10m_max": "km/h",
+                },
+            },
+        ]
+    )
+    tool = _weather_module().OpenMeteoWeatherTool(
+        http_client=client,
+        now_provider=lambda: datetime(2026, 8, 11, 18, 30, 0, tzinfo=UTC),
+    )
+
+    result = await tool.run({"location": "合肥", "days_ahead": 2, "timezone": "Asia/Shanghai"})
+
+    assert client.get_calls[1]["params"]["start_date"] == "2026-08-14"
+    assert result["forecast"]["date"] == "2026-08-14"
 
 
 def test_open_meteo_weather_tool_name_matches_public_spec():
