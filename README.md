@@ -1,4 +1,4 @@
-# 最小可用 Agent
+﻿# 最小可用 Agent
 
 基于 FastAPI、Qwen Plus、SQLite、SSE 和 React 的最小可用 Agent 项目。项目包含后端 Agent 服务和前端控制台，重点验证多会话隔离、工具识别与调用、流式回答、上下文构建、长期记忆召回和 trace 记录。
 
@@ -273,36 +273,3 @@ npx playwright install chromium
 ```
 
 然后根据本机浏览器环境调整 `frontend/playwright.config.ts`。
-
-## GitHub 上传前检查
-
-不要提交以下本地文件或目录：
-
-- `.env`
-- `.venv/`
-- `data/`
-- `logs/`
-- `frontend/node_modules/`
-- `frontend/dist/`
-- `frontend/test-results/`
-- `frontend/playwright-report/`
-- `*.sqlite3`
-
-这些已经在 `.gitignore` 中忽略。上传前建议执行：
-
-```bash
-git status --short
-git diff --check
-uv run pytest -m "not integration" -v
-cd frontend && npm test && npm run build
-```
-
-## 当前状态
-
-当前 MVP 已具备后端 Agent 服务、前端控制台、工具调用、流式输出、多会话隔离、消息历史恢复、长期记忆召回和完整自动化测试基础。后续可以继续扩展：
-
-- 前端记忆查看/删除面板。
-- 模型可配置页面。
-- 更细粒度的记忆抽取策略。
-- 工具调用审计和人工确认流程。
-- Docker 部署与 CI。
