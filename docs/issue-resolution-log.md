@@ -115,3 +115,11 @@
 - 修改文件：`docs/issue-resolution-log.md`、`frontend/vite.config.ts`、`frontend/tsconfig.node.json`
 - 验证命令：待重新执行 `npm test -- src/api/config.test.ts` 与 `npm run build`
 - 结果：已修正 Vitest/Vite 类型入口与 TypeScript project reference 配置；`npm test -- src/api/config.test.ts` 与 `npm run build` 均通过。
+
+## 2026-08-12 - 前端 Task 1 RED 证据未落库
+- 日期：2026-08-12
+- 现象：spec review 指出 Task 1 的 RED 证据没有落到仓库；最终 diff 里 `config.test.ts` 和 `config.ts` 同时新增，仓库里看不到 `config.ts` 实现前的失败证明。
+- 根因：RED 失败只写在子代理汇报里，没有同步到可审计文档，导致后来只能从口头记录推断流程。
+- 修改文件：`docs/issue-resolution-log.md`
+- 验证命令：`cd frontend; npm test -- src/api/config.test.ts; npm run build`
+- 结果：已补充 RED 失败摘要 `Failed to resolve import "./config"`；当前验证命令通过。
