@@ -247,6 +247,9 @@ async def test_react_agent_executes_calculator_tool_and_saves_streamed_answer():
     assert session_store.added[-1] == ("alice", "s1", "assistant", "答案是4")
     assert memory_store.added[-1][2] == "答案是4"
     assert events[-1].data["memory_saved"] is True
+    assert events[-1].data["history_messages"] == 1
+    assert events[-1].data["selected_memory_context"] == 1
+    assert "selected_context" not in events[-1].data
     _assert_trace_metadata(trace_logger, "alice", "s1")
 
 

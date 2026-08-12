@@ -299,3 +299,11 @@
 - 修改文件：`docs/issue-resolution-log.md`、`frontend/src/components/AgentConsole.test.tsx`、`frontend/src/components/AgentConsole.tsx`
 - 验证命令：`cd frontend; npm test -- src/components/AgentConsole.test.tsx -t "创建会话未返回时切换用户会忽略旧用户新会话"`、`cd frontend; npm test -- src/components/AgentConsole.test.tsx -t "删除会话未返回时切换用户会忽略旧用户删除结果"`、`cd frontend; npm test -- src/components/AgentConsole.test.tsx -t "创建会话失败前切换用户不显示旧用户错误"`、`cd frontend; npm test -- src/components/AgentConsole.test.tsx -t "删除会话失败前切换用户不显示旧用户错误"`
 - 结果：PASS，创建/删除会话成功或失败返回后先校验当前活跃用户，不匹配时丢弃旧用户异步结果和错误提示。
+
+## 2026-08-12 - 后端 message_end 上下文字段语义不清
+- 日期：2026-08-12
+- 现象：用户看到 `selected_context: 0` 后容易误以为 Agent 没有读取最近对话历史，但实际回答已使用历史消息。
+- 根因：`selected_context` 只统计被选中的记忆上下文包，不包含进入 `[State]` 的最近会话消息，字段名没有表达这个差异。
+- 修改文件：`docs/issue-resolution-log.md`、`tests/unit/agents/test_react_agent.py`、`src/agents/react_agent.py`
+- 验证命令：`uv run pytest tests/unit/agents/test_react_agent.py::test_react_agent_executes_calculator_tool_and_saves_streamed_answer -v`
+- 结果：PASS，`message_end` 改为输出 `history_messages` 和 `selected_memory_context`，不再输出容易误导的 `selected_context`。

@@ -186,7 +186,8 @@ class ReactAgent:
 
         end_data: dict[str, Any] = {
             "content": assistant_message,
-            "selected_context": len(built_context.selected_packets),
+            "history_messages": len(history),
+            "selected_memory_context": len(built_context.selected_packets),
             "memory_saved": memory_saved,
         }
         if warning is not None:
