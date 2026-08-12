@@ -212,6 +212,21 @@ Agent 每轮会读取：
 
 长期记忆保存在 SQLite `memories` 表中。检索会同时索引助手回复 `content` 和 `metadata_json.user_message`，因此用户事实类表达也能被召回。
 
+召回时机：
+
+- 每次 `POST /chat/stream` 进入一次新对话轮次时都会先做记忆召回。
+- 先保存当前用户消息，再用这条用户消息作为检索查询。
+- 只有当前 `user_id + session_id` 范围内的记忆会参与召回。
+- 如果没有命中记忆，Agent 仍会继续只依赖最近历史消息。
+
+放置方式：
+
+- 召回到的记忆会被转换成 `ContextPacket`。
+- 这些记忆包会作为 `memory_packets` 传入 `ContextBuilder.build()`。
+- 记忆内容最终放在上下文里的 `[Context]` 区段，不会替代 `[State]` 中的最近会话历史。
+- `[State]` 只放最近历史消息，`[Context]` 负责放长期记忆和可选自定义上下文。
+- `message_end` 会返回 `selected_memory_context`，用于查看这轮实际选中了多少条长期记忆。
+
 `message_end` 中的关键字段：
 
 - `history_messages`：本轮进入上下文的最近历史消息条数。
