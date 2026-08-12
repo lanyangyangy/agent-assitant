@@ -131,3 +131,43 @@
 - 修改文件：`docs/issue-resolution-log.md`、`frontend/src/api/http.ts`
 - 验证命令：`cd frontend; npm test -- src/api/http.test.ts src/api/config.test.ts`
 - 结果：已剥离内部 `userId` 字段，并稳定传入 `X-User-Id` 请求头；定向测试 2 个文件、4 项断言通过。
+
+## 2026-08-12 - 前端组件测试 DOM 未隔离
+- 日期：2026-08-12
+- 现象：执行 `cd frontend; npm test -- src/components/AgentConsole.test.tsx` 时，4 个测试中 3 个失败，Testing Library 报告找到多个同名 `新建会话` 按钮。
+- 根因：Vitest 测试环境只加载了 `@testing-library/jest-dom/vitest`，没有在每个测试后执行 React Testing Library 的 `cleanup()`，导致前一个测试渲染出的 DOM 残留到后续测试。
+- 修改文件：`docs/issue-resolution-log.md`、`frontend/vitest.setup.ts`
+- 验证命令：`cd frontend; npm test -- src/components/AgentConsole.test.tsx`
+- 结果：已加入 `afterEach(cleanup)`；重新执行后 DOM 残留问题消失，继续暴露组件断言选择器不够精确的问题。
+
+## 2026-08-12 - 前端组件测试文本断言过宽
+- 日期：2026-08-12
+- 现象：修复 DOM 清理后，`cd frontend; npm test -- src/components/AgentConsole.test.tsx` 仍有 2 项失败；`/当前会话/` 同时匹配会话行和聊天标题，`/437/` 同时匹配工具结果 JSON 与助手回答。
+- 根因：测试使用宽泛文本正则断言跨区域 UI，未限定具体可见文本或语义区域；真实界面为了让侧边栏、聊天栏和事件栏都可扫描，会合理重复部分信息。
+- 修改文件：`docs/issue-resolution-log.md`、`frontend/src/components/AgentConsole.test.tsx`
+- 验证命令：`cd frontend; npm test -- src/components/AgentConsole.test.tsx`
+- 结果：已将断言收窄到 `当前会话 alice-se` 与工具结果 JSON 中的 `"result": 437`；定向组件测试 4 项通过。
+
+## 2026-08-12 - 前端 build 缺少 jest-dom matcher 类型
+- 日期：2026-08-12
+- 现象：执行 `cd frontend; npm run build` 时，`AgentConsole.test.tsx` 中的 `toBeInTheDocument()`、`toBeDisabled()` 类型检查失败。
+- 根因：`frontend/tsconfig.json` 显式配置了 `types: ["vite/client"]`，TypeScript 只加载 Vite 客户端全局类型，没有加载 Vitest 和 `@testing-library/jest-dom` 的 matcher 类型扩展。
+- 修改文件：`docs/issue-resolution-log.md`、`frontend/tsconfig.json`
+- 验证命令：`cd frontend; npm run build`
+- 结果：已补充 `vitest/globals` 与 `@testing-library/jest-dom` 类型入口；`npm run build` 通过。
+
+## 2026-08-12 - 前端 Task 6 fake API 可控性不足
+- 日期：2026-08-12
+- 现象：Task 6 规格复核指出 `加载健康状态、工具和会话` 测试没有真正断言会话加载，`createFakeApi()` 也无法预置数据或检查调用记录。
+- 根因：首版组件测试只覆盖了默认空会话下的健康状态和工具目录，fake API 只实现固定成功路径，没有暴露可控 seed 和调用记录。
+- 修改文件：`docs/issue-resolution-log.md`、`frontend/src/components/AgentConsole.test.tsx`、`frontend/src/test/fakeApi.ts`
+- 验证命令：`cd frontend; npm test -- src/components/AgentConsole.test.tsx`
+- 结果：已让测试预置 `alice-history-1` 会话并断言 `listSessions("alice")` 调用记录；`createFakeApi()` 支持预置 health/sessions/tools/stream events 和调用记录；定向组件测试 4 项通过。
+
+## 2026-08-12 - 前端会话加载旧请求覆盖当前用户
+- 日期：2026-08-12
+- 现象：本地代码质量复核发现 `AgentConsole` 在用户 ID 连续变化时会并发请求会话列表；如果旧用户请求晚于新用户请求返回，旧用户会话可能覆盖当前用户界面。
+- 根因：`loadSessions()` 没有给异步请求设置最新请求标记，也没有在用户切换、创建或删除会话时让旧的列表请求失效。
+- 修改文件：`docs/issue-resolution-log.md`、`frontend/src/components/AgentConsole.test.tsx`、`frontend/src/components/AgentConsole.tsx`
+- 验证命令：`cd frontend; npm test -- src/components/AgentConsole.test.tsx`
+- 结果：已新增旧请求晚返回回归测试，并用递增请求号忽略过期会话列表响应；组件测试 5 项通过。
