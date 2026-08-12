@@ -34,3 +34,9 @@ export interface SseEvent {
   event: string;
   data: Record<string, unknown>;
 }
+
+export interface ChatStreamRequest {
+  session_id: string;
+  message: string;
+  metadata?: Record<string, unknown>;
+}

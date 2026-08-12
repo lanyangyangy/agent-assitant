@@ -1,5 +1,13 @@
 import { requestJson } from "./http";
-import type { HealthResponse, SessionListResponse, SessionRecord, ToolSchema } from "./types";
+import { streamSseEvents } from "./sse";
+import type {
+  ChatStreamRequest,
+  HealthResponse,
+  SessionListResponse,
+  SessionRecord,
+  SseEvent,
+  ToolSchema,
+} from "./types";
 
 type FetchLike = typeof fetch;
 
@@ -14,6 +22,7 @@ export interface BackendClient {
   createSession(userId: string): Promise<SessionRecord>;
   deleteSession(userId: string, sessionId: string): Promise<void>;
   listTools(): Promise<ToolSchema[]>;
+  streamChat(userId: string, request: ChatStreamRequest): AsyncGenerator<SseEvent>;
 }
 
 export function createBackendClient(options: BackendClientOptions): BackendClient {
@@ -39,5 +48,21 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       );
     },
     listTools: () => requestJson<ToolSchema[]>(options.baseUrl, "/tools", {}, fetchImpl),
+    async *streamChat(userId, request) {
+      const response = await fetchImpl(`${options.baseUrl}/chat/stream`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-User-Id": userId,
+        },
+        body: JSON.stringify(request),
+      });
+
+      if (!response.ok || !response.body) {
+        throw new Error("聊天流中断，请重试。");
+      }
+
+      yield* streamSseEvents(response.body);
+    },
   };
 }
